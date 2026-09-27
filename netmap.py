@@ -6,7 +6,7 @@
   ./netmap.py update-oui       # download IEEE vendor DB
 """
 import argparse, collections, concurrent.futures as cf, csv, io, ipaddress, json, os, platform, re
-import socket, subprocess, sys, threading, time, urllib.request
+import select, socket, struct, subprocess, sys, threading, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -140,6 +140,60 @@ def arp_table():
 
 def ping(ip, count=1):
     return parse_ping(run(["ping", "-c", str(count), "-W", "1000" if MAC_OS else "1", ip], timeout=count + 3))
+
+
+def _checksum(b):
+    s = sum(struct.unpack(f"!{len(b) // 2}H", b))
+    s = (s >> 16) + (s & 0xFFFF)
+    return ~(s + (s >> 16)) & 0xFFFF
+
+
+def icmp_sweep(hosts, timeout=1.5, retry_after=0.5):
+    """Echo every host from ONE unprivileged ICMP socket (macOS; Linux via net.ipv4.ping_group_range).
+    ~1.5s for a /24 vs ~8s for a subprocess-per-host sweep. -> {ip: rtt_ms}; raises OSError if unavailable."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
+    ident, sent, res = os.getpid() & 0xFFFF, {}, {}
+
+    def send(batch):
+        for i, h in enumerate(batch):
+            body = struct.pack("!BBHHH", 8, 0, 0, ident, i & 0xFFFF) + b"netmap"
+            try:
+                s.sendto(body[:2] + struct.pack("!H", _checksum(body)) + body[4:], (h, 0))
+                sent[h] = time.perf_counter()
+            except OSError:  # host down / ENOBUFS; the retry round covers it
+                pass
+            if i % 32 == 31:
+                time.sleep(0.002)  # don't overflow the ARP/send queue
+
+    with s:
+        start, retried = time.perf_counter(), False
+        send(hosts)
+        if not sent:
+            raise OSError("ICMP socket can't send")
+        while len(res) < len(hosts) and (left := start + timeout - time.perf_counter()) > 0:
+            if not retried and time.perf_counter() - start > retry_after:
+                retried = True
+                send([h for h in hosts if h not in res])
+            if not select.select([s], [], [], min(left, 0.1))[0]:
+                continue
+            data, (addr, _) = s.recvfrom(2048)
+            if data and data[0] >> 4 == 4:  # macOS includes the IP header, Linux doesn't
+                data = data[(data[0] & 15) * 4:]
+            if data and data[0] == 0 and addr in sent and addr not in res:
+                res[addr] = round((time.perf_counter() - sent[addr]) * 1000, 2)
+    return res
+
+
+def sweep(hosts):
+    """-> {ip: rtt_ms or None} for every host."""
+    try:
+        found = icmp_sweep(hosts)
+        # first replies include ARP resolution time; re-ping the live ones (returns as soon as all answer)
+        found.update(icmp_sweep(list(found), timeout=1.0, retry_after=9) if found else {})
+        return {h: found.get(h) for h in hosts}
+    except OSError:
+        with cf.ThreadPoolExecutor(64) as ex:
+            return dict(zip(hosts, ex.map(ping, hosts)))
 
 
 def tcp_open(host_port, timeout=0.5):
@@ -281,20 +335,25 @@ class Netmap:
             raise SystemExit(f"no IPv4 address on {iface}")
         if net.num_addresses > 4096:
             raise SystemExit(f"{net} is too large (>4096 addresses); pass a smaller --cidr")
+        t0 = time.time()
         with self.lock:
             self.meta.update(scanning=True, iface=iface, ip=my_ip, cidr=str(net), gateway=gw,
                              hostname=socket.gethostname(), os=platform.system(), interval=a.interval)
         hosts = [str(h) for h in net.hosts()]
-        with cf.ThreadPoolExecutor(64) as ex:
-            rtts = dict(zip(hosts, ex.map(ping, hosts)))
-        arp = arp_table()
-        found = {h for h, r in rtts.items() if r is not None} | {h for h in arp if h in rtts} | {my_ip}
-        open_ports = port_scan(found) if not a.no_ports else {}
-        with cf.ThreadPoolExecutor(32) as ex:
-            names = dict(zip(found, ex.map(rdns, found)))
+        with cf.ThreadPoolExecutor(1) as bg:  # upstream path runs alongside the sweep
+            path = bg.submit(run, ["traceroute", "-n", "-m", "12", "-q", "1", "-w", "1", "1.1.1.1"], 40) if a.traceroute else None
+            self.meta["phase"] = "sweep"
+            rtts = sweep(hosts)
+            arp = arp_table()
+            self.meta["phase"] = "ports"
+            found = {h for h, r in rtts.items() if r is not None} | {h for h in arp if h in rtts} | {my_ip}
+            with cf.ThreadPoolExecutor(32) as ex:
+                names_f = ex.map(rdns, found)
+                open_ports = port_scan(found) if not a.no_ports else {}
+                names = dict(zip(found, names_f))
+            if path:
+                self.path = parse_traceroute(path.result())
         names[my_ip] = names.get(my_ip) or socket.gethostname()
-        if a.traceroute:
-            self.path = parse_traceroute(run(["traceroute", "-n", "-m", "12", "-q", "1", "-w", "1", "1.1.1.1"], 40))
 
         now = time.time()
         with self.lock:
@@ -319,6 +378,7 @@ class Netmap:
                 if not a.no_ports:
                     d["ports"] = sorted(open_ports.get(h, []))
                 d["type"] = guess_type(d)
+                d["rtt_hist"] = (d.get("rtt_hist") or [])[-59:] + [rtts.get(h)]  # per-scan latency/jitter trend
                 if online:
                     d["last_seen"] = now
                 if new:
@@ -343,7 +403,7 @@ class Netmap:
                                       "(System Settings > Privacy & Security > Local Network) or run with /usr/bin/python3.")
             else:
                 self.meta.pop("error", None)
-            self.meta.update(scanning=False, last_scan=now)
+            self.meta.update(scanning=False, last_scan=now, phase=None, scan_secs=round(now - t0, 1))
             self.save()
 
     def tick(self, prev):

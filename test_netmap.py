@@ -36,4 +36,6 @@ assert n.parse_iface_bytes("""Inter-|   Receive                                 
 assert n.guess_type({"ports": [9100]}) == "printer"
 assert n.guess_type({"is_gateway": True, "ports": [9100]}) == "router"
 assert n.vendor("02:11:22:33:44:55") == "Private (randomized MAC)"
+assert n._checksum(b"\x08" + bytes(7)) == 0xF7FF  # echo request, id=0 seq=0
+
 print("ok")

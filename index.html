@@ -6,292 +6,678 @@
 <title>netmap</title>
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
 <style>
-:root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--mut:#8b949e;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--acc:#58a6ff}
+:root{
+  --bg:#0a0e13;--s1:#10151c;--s2:#161d26;--s3:#1d2630;--line:#232d3a;--line2:#2e3a49;
+  --fg:#e6edf3;--mut:#8593a6;--dim:#5b6878;--acc:#4f8cff;--acc2:#4f8cff22;
+  --ok:#34d399;--warn:#fbbf24;--bad:#f87171;
+  --r:10px;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;height:100vh;display:flex;flex-direction:column}
-header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
-header h1{font-size:15px;margin:0}
-.chip{color:var(--mut);white-space:nowrap}.chip b{color:var(--fg);font-weight:600}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--s2);border:1px solid var(--line2);border-radius:8px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background .12s,border-color .12s}
+button:hover{background:var(--s3);border-color:var(--dim)}
+button.on{background:var(--acc2);border-color:var(--acc);color:#cfe0ff}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}button.primary:hover{background:#6b9dff}
+button:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+input,textarea{background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;width:100%}
+input:focus,textarea:focus{border-color:var(--acc);outline:none}
+.ic{width:15px;height:15px;flex:none}
+.mono{font-family:var(--mono);font-size:12px}
+.mut{color:var(--mut)}.sm{font-size:11.5px}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+
+/* header */
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--s1)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;letter-spacing:-.01em}
+.brand .logo{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#4f8cff,#7c5cff);display:grid;place-items:center;color:#fff}
+.netpill{display:flex;gap:10px;align-items:center;background:var(--s2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.netpill b{color:var(--fg);font-family:var(--mono);font-weight:500}
 .sp{flex:1}
-button,select,input,textarea{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 9px;font:inherit}
-button{cursor:pointer}button:hover{border-color:var(--acc)}button.on{border-color:var(--acc);color:var(--acc)}
-#err{display:none;background:#3d1d1d;color:#ffb3ad;padding:6px 14px;border-bottom:1px solid var(--bad)}
-main{display:grid;grid-template-columns:minmax(0,1fr) 440px;min-height:0;flex:1}
-#graph{width:100%;height:100%;display:block;cursor:grab;min-height:0}
-aside{min-width:0;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
-nav{display:flex;border-bottom:1px solid var(--line)}
-nav button{flex:1;border:0;border-radius:0;border-bottom:2px solid transparent;background:none;padding:9px}
-nav button.on{border-bottom-color:var(--acc)}
-.tab{display:none;overflow:auto;padding:10px;flex:1}.tab.on{display:block}
-table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--mut);font-weight:500;position:sticky;top:-10px;background:var(--panel)}
-tbody tr{cursor:pointer}tbody tr:hover,tr.sel{background:#1f2630}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
-.online{background:var(--ok)}.stale{background:var(--warn)}.offline{background:var(--mut)}
-.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
-.mut{color:var(--mut)}
-.pill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 7px;margin:2px;font-size:12px}
-a{color:var(--acc)}
-dl{display:grid;grid-template-columns:110px 1fr;gap:3px 8px;margin:8px 0}dt{color:var(--mut)}dd{margin:0;word-break:break-all}
-pre{background:var(--bg);padding:8px;border-radius:6px;overflow:auto;white-space:pre-wrap}
-.ev-warn{color:var(--warn)}.ev-error{color:var(--bad)}
-#legend{position:absolute;left:10px;bottom:10px;background:#161b22cc;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px}
-#legend span{margin-right:8px;white-space:nowrap}
+.scanst{display:flex;align-items:center;gap:7px;color:var(--mut);white-space:nowrap}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 #34d39980}
+.pulse.busy{background:var(--acc);animation:ping 1.2s infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 #4f8cffaa}100%{box-shadow:0 0 0 9px #4f8cff00}}
+.menu{position:relative}
+.menu .pop{display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--s2);border:1px solid var(--line2);border-radius:10px;padding:5px;z-index:20;min-width:150px;box-shadow:0 12px 30px #0008}
+.menu.open .pop{display:block}
+.pop button{width:100%;border:0;background:none;justify-content:flex-start}.pop button:hover{background:var(--s3)}
+
+#err{display:none;background:#2a1516;color:#fecaca;padding:8px 16px;border-bottom:1px solid #7f1d1d}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(5,minmax(170px,1fr));gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--s1);overflow-x:auto}
+.card{background:var(--s2);border:1px solid var(--line);border-radius:var(--r);padding:9px 12px;display:grid;grid-template-columns:1fr auto;align-items:end;gap:2px 10px;min-width:0}
+.card .k{grid-column:1/-1;color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.card .v{font-size:20px;font-weight:650;letter-spacing:-.02em;white-space:nowrap}
+.card .v small{font-size:12px;color:var(--mut);font-weight:500;margin-left:3px}
+.card .d{grid-column:1/-1;color:var(--mut);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card svg{display:block}
+.card.click{cursor:pointer}.card.click:hover{border-color:var(--line2)}
+
+/* main */
+main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 460px;min-height:0}
+.canvas{position:relative;min-width:0;min-height:0;background:radial-gradient(circle at 50% 40%,#111a26 0,var(--bg) 70%)}
+.canvas::before{content:"";position:absolute;inset:0;background-image:radial-gradient(#ffffff0d 1px,transparent 1px);background-size:22px 22px;pointer-events:none}
+#graph{position:absolute;inset:0;width:100%;height:100%;cursor:grab}
+#graph:active{cursor:grabbing}
+.tools{position:absolute;top:12px;left:12px;display:flex;gap:6px;flex-wrap:wrap;z-index:5}
+.group{display:flex;background:var(--s1);border:1px solid var(--line2);border-radius:9px;padding:2px;gap:2px;box-shadow:0 4px 14px #0006}
+.group button{border:0;background:none;border-radius:7px;padding:5px 9px}
+.group button:hover{background:var(--s3)}.group button.on{background:var(--acc2);color:#cfe0ff}
+#tip{position:absolute;pointer-events:none;z-index:10;background:#0d131bf2;border:1px solid var(--line2);border-radius:10px;padding:9px 11px;min-width:190px;max-width:280px;box-shadow:0 12px 30px #000a;display:none;font-size:12px}
+#tip h4{margin:0 0 5px;font-size:13px}
+#tip .row{display:flex;justify-content:space-between;gap:12px}#tip .row span:first-child{color:var(--mut)}
+#legend{position:absolute;left:12px;bottom:12px;background:#10151cf0;border:1px solid var(--line2);border-radius:10px;padding:9px 11px;font-size:11.5px;display:none;z-index:5;max-width:min(520px,calc(100% - 24px))}
+#legend.show{display:block}
+#legend .sw{display:inline-flex;align-items:center;gap:5px;margin:2px 10px 2px 0;white-space:nowrap}
+#legend .ln{display:inline-block;width:22px;height:0;border-top:2px solid;vertical-align:middle;margin-right:4px}
+#empty{position:absolute;inset:0;display:none;place-items:center;text-align:center;color:var(--mut);pointer-events:none}
+#empty.show{display:grid}
+.radar{width:120px;height:120px;border-radius:50%;margin:0 auto 14px;border:1px solid #4f8cff55;position:relative;background:radial-gradient(circle,#4f8cff22 0,transparent 70%)}
+.radar::after{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#4f8cff66,transparent 25%);animation:spin 1.6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .wan{animation:flow linear infinite}
 @keyframes flow{to{stroke-dashoffset:-24}}
-@media (max-width:900px){body{height:auto}main{grid-template-columns:minmax(0,1fr);grid-template-rows:60vh auto}#legend{display:none}aside{border-left:0;border-top:1px solid var(--line)}}
+.newring{animation:glow 1.6s ease-in-out infinite}
+@keyframes glow{50%{stroke-opacity:.15}}
+
+/* side panel */
+aside{min-width:0;min-height:0;border-left:1px solid var(--line);background:var(--s1);display:flex;flex-direction:column}
+nav{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line)}
+nav button{border:0;background:none;border-radius:8px 8px 0 0;padding:8px 12px;color:var(--mut);border-bottom:2px solid transparent;margin-bottom:-1px}
+nav button:hover{background:none;color:var(--fg)}
+nav button.on{color:var(--fg);border-bottom-color:var(--acc);background:none}
+.badge{background:var(--s3);color:var(--mut);border-radius:999px;padding:0 6px;font-size:11px;font-weight:600}
+.badge.hot{background:var(--warn);color:#1a1300}
+.tab{display:none;overflow:auto;flex:1;min-height:0}.tab.on{display:block}
+.bar{display:flex;gap:8px;padding:10px 12px;position:sticky;top:0;background:var(--s1);z-index:2;border-bottom:1px solid var(--line)}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:2px;flex:none}
+.seg button{border:0;background:none;padding:3px 9px;border-radius:6px;color:var(--mut)}
+.seg button.on{background:var(--s3);color:var(--fg)}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+#devices col.a{width:132px}#devices col.r{width:58px}#devices col.p{width:52px}
+th{position:sticky;top:53px;background:var(--s1);z-index:1;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:var(--fg)}th .arr{opacity:.7}
+td{padding:8px 10px;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer;transition:background .1s}
+tbody tr:hover{background:var(--s2)}tbody tr.sel{background:var(--acc2);box-shadow:inset 3px 0 0 var(--acc)}
+.dev{display:flex;align-items:center;gap:10px;min-width:0}
+.dev .nm,.dev .mut{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dev .nm{font-weight:550}
+.av{position:relative;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--c) 14%,transparent);color:var(--c)}
+.av .ic{width:16px;height:16px}
+.av i{position:absolute;right:-2px;bottom:-2px;width:9px;height:9px;border-radius:50%;border:2px solid var(--s1)}
+.st-online{background:var(--ok)}.st-stale{background:var(--warn)}.st-offline{background:var(--dim)}
+.rtt{font-family:var(--mono);font-size:12px;font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--line2);border-radius:6px;padding:1px 7px;margin:2px 4px 2px 0;font-size:11.5px}
+.chip b{font-family:var(--mono);font-weight:600}
+a.chip:hover{border-color:var(--acc);text-decoration:none}
+.empty{padding:40px 16px;text-align:center;color:var(--mut)}
+
+/* details */
+.det{padding:14px}
+.dhead{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.dhead .av{width:46px;height:46px;border-radius:12px}.dhead .av .ic{width:24px;height:24px}
+.dhead h2{margin:0;font-size:17px;letter-spacing:-.01em;word-break:break-all}
+.pillst{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600;background:var(--s3)}
+.actions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.sec{background:var(--s2);border:1px solid var(--line);border-radius:var(--r);padding:11px 12px;margin-bottom:10px}
+.sec h3{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:600;display:flex;justify-content:space-between}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:5px 10px}
+.kv dt{color:var(--mut)}.kv dd{margin:0;word-break:break-all}
+.mini{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;text-align:center}
+.mini div{background:var(--bg);border-radius:7px;padding:5px}.mini b{display:block;font-family:var(--mono);font-size:12.5px}.mini span{font-size:10.5px;color:var(--mut)}
+.hop{display:grid;grid-template-columns:22px 1fr 60px 70px;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;padding:2px 0}
+.hbar{height:5px;border-radius:3px;background:var(--acc)}
+.spin{width:14px;height:14px;border:2px solid #fff4;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+
+/* activity & events */
+.proc{display:grid;grid-template-columns:130px 1fr 30px;gap:8px;align-items:center;padding:3px 0;font-size:12px}
+.proc .t{height:7px;border-radius:4px;background:linear-gradient(90deg,var(--acc),#7c5cff)}
+.ev{display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.ev:hover{background:var(--s2)}
+.ev .lv{width:8px;height:8px;border-radius:50%;margin-top:5px;flex:none}
+.lv-info{background:var(--acc)}.lv-warn{background:var(--warn)}.lv-error{background:var(--bad)}
+.ev .when{margin-left:auto;color:var(--dim);white-space:nowrap;font-size:11.5px}
+
+#toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{background:var(--s2);border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:9px;padding:9px 12px;max-width:340px;box-shadow:0 12px 30px #000a;animation:tin .2s ease-out}
+.toast.warn{border-left-color:var(--warn)}.toast.error{border-left-color:var(--bad)}
+@keyframes tin{from{transform:translateY(8px);opacity:0}}
+
+@media (max-width:1000px){
+  body{overflow:auto;height:auto}
+  .stats{grid-template-columns:repeat(5,170px)}
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:62vh auto}
+  aside{border-left:0;border-top:1px solid var(--line);max-height:none}
+  .netpill{display:none}
+  header{flex-wrap:wrap;gap:8px 10px}.scanst{order:5;width:100%}
+  .tools{gap:4px}.group button{padding:4px 7px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="icons"></defs></svg>
+
 <header>
-  <h1>netmap</h1>
-  <span class="chip" id="net"></span>
-  <span class="chip" id="counts"></span>
-  <span class="chip" id="rates"></span>
-  <svg id="spark" width="140" height="26"></svg>
-  <span class="chip" id="scan"></span>
+  <div class="brand"><span class="logo"><svg class="ic"><use href="#i-share"/></svg></span>netmap</div>
+  <div class="netpill" id="net">starting…</div>
   <span class="sp"></span>
-  <button id="bConns" title="Show remote endpoints of this host's live TCP connections">Connections</button>
-  <button id="bOff" class="on">Offline</button>
-  <button id="bScan" title="r">Rescan</button>
-  <select id="exp"><option value="">Export…</option><option>JSON</option><option>CSV</option><option>SVG</option></select>
-</header>
-<div id="err"></div>
-<main>
-  <div style="position:relative;min-height:0">
-    <svg id="graph"></svg>
-    <div id="legend"></div>
+  <div class="scanst" id="scanst"><span class="pulse" id="pulse"></span><span id="scantxt">–</span></div>
+  <button class="primary" id="bScan" title="Rescan now (r)"><svg class="ic"><use href="#i-refresh"/></svg>Rescan</button>
+  <div class="menu" id="expMenu">
+    <button id="bExp" aria-haspopup="true"><svg class="ic"><use href="#i-download"/></svg>Export</button>
+    <div class="pop" role="menu">
+      <button data-x="png">Topology · PNG</button><button data-x="svg">Topology · SVG</button>
+      <button data-x="csv">Inventory · CSV</button><button data-x="json">Full state · JSON</button>
+    </div>
   </div>
+</header>
+<div id="err" role="alert"></div>
+
+<section class="stats">
+  <div class="card click" data-go="devices"><div class="k">Devices online</div><div class="v" id="stDev">–</div><div class="d" id="stDevD"></div></div>
+  <div class="card"><div class="k">Gateway latency</div><div class="v" id="stGw">–</div><svg id="spGw" width="80" height="28"></svg><div class="d" id="stGwD"></div></div>
+  <div class="card"><div class="k">Throughput</div><div class="v" id="stTp">–</div><svg id="spTp" width="80" height="28"></svg><div class="d" id="stTpD"></div></div>
+  <div class="card click" data-go="activity"><div class="k">Connections</div><div class="v" id="stCn">–</div><div class="d" id="stCnD"></div></div>
+  <div class="card click" data-go="events"><div class="k">Alerts</div><div class="v" id="stAl">–</div><div class="d" id="stAlD"></div></div>
+</section>
+
+<main>
+  <div class="canvas" id="canvas">
+    <svg id="graph" role="img" aria-label="Network topology"></svg>
+    <div class="tools">
+      <div class="group" id="layout"><button data-v="radial" class="on" title="Devices in a ring around the gateway">Radial</button><button data-v="force" title="Physics layout, drag to pin">Force</button></div>
+      <div class="group">
+        <button id="bConns" title="Draw this host's live TCP connections"><svg class="ic"><use href="#i-activity"/></svg>Connections</button>
+        <button id="bOff" class="on" title="Show offline devices">Offline</button>
+        <button id="bLeg" title="Legend">Legend</button>
+      </div>
+      <div class="group">
+        <button id="zIn" aria-label="Zoom in">+</button><button id="zOut" aria-label="Zoom out">−</button>
+        <button id="zFit" title="Fit to view (f)"><svg class="ic"><use href="#i-fit"/></svg></button>
+      </div>
+    </div>
+    <div id="tip"></div>
+    <div id="legend"></div>
+    <div id="empty"><div><div class="radar"></div><div id="emptyTxt">Discovering devices…</div></div></div>
+  </div>
+
   <aside>
-    <nav><button data-t="devices" class="on">Devices</button><button data-t="details">Details</button><button data-t="activity">Activity</button><button data-t="events">Events</button></nav>
+    <nav>
+      <button data-t="devices" class="on">Devices <span class="badge" id="bdDev">0</span></button>
+      <button data-t="details">Details</button>
+      <button data-t="activity">Activity <span class="badge" id="bdAct">0</span></button>
+      <button data-t="events">Events <span class="badge" id="bdEv">0</span></button>
+    </nav>
     <div class="tab on" id="devices">
-      <input id="filter" placeholder="Filter (ip, name, vendor, type, port)…  /" style="width:100%;margin-bottom:8px">
-      <table><thead><tr><th>IP</th><th>Name / vendor</th><th>Type</th><th>RTT</th><th>Ports</th></tr></thead><tbody id="devBody"></tbody></table>
+      <div class="bar">
+        <input id="filter" type="search" placeholder="Search ip, name, vendor, port…  ( / )" aria-label="Filter devices">
+        <div class="seg" id="stFilter"><button data-v="all" class="on">All</button><button data-v="online">Up</button><button data-v="offline">Down</button></div>
+      </div>
+      <table><colgroup><col><col class="a"><col class="r"><col class="p"></colgroup><thead><tr><th data-k="name">Device</th><th data-k="ip">Address</th><th data-k="rtt">RTT</th><th data-k="ports">Ports</th></tr></thead><tbody id="devBody"></tbody></table>
     </div>
-    <div class="tab" id="details"><p class="mut">Click a node or row.</p></div>
-    <div class="tab" id="activity">
-      <p class="mut">Live established TCP connections from this host (refreshed every 2s).</p>
-      <table><thead><tr><th>Process</th><th>Remote</th><th>Port</th><th>#</th></tr></thead><tbody id="actBody"></tbody></table>
+    <div class="tab" id="details"><div class="empty">Select a device on the map or in the list.</div></div>
+    <div class="tab" id="activity"></div>
+    <div class="tab" id="events">
+      <div class="bar"><div class="seg" id="evFilter"><button data-v="all" class="on">All</button><button data-v="warn">Warnings</button></div></div>
+      <div id="evBody"></div>
     </div>
-    <div class="tab" id="events"><table><tbody id="evBody"></tbody></table></div>
   </aside>
 </main>
+<div id="toasts" aria-live="polite"></div>
+
 <script>
-const $ = s => document.querySelector(s);
+const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const TYPES = {internet:['#8b949e','WAN'],hop:['#6e7681','hop'],router:['#f0883e','RT'],'this-host':['#58a6ff','ME'],
-  network:['#d29922','NW'],computer:['#a371f7','PC'],server:['#3fb950','SV'],phone:['#db61a2','PH'],printer:['#79c0ff','PR'],
-  media:['#ff7b72','TV'],camera:['#e3b341','CAM'],iot:['#56d4dd','IOT'],remote:['#484f58','EXT'],unknown:['#6e7681','?']};
+const C = {bg:'#0a0e13', s1:'#10151c', fg:'#e6edf3', mut:'#8593a6', dim:'#5b6878', acc:'#4f8cff', ok:'#34d399', warn:'#fbbf24', bad:'#f87171'};
+
+// 24px stroke icons
+const ICONS = {
+  internet:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  router:'<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M12 13V9M8.5 7.5a5 5 0 0 1 7 0M6 5a8.5 8.5 0 0 1 12 0"/>',
+  'this-host':'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  computer:'<rect x="4" y="5" width="16" height="10" rx="1.5"/><path d="M2 19h20"/>',
+  server:'<rect x="3" y="3.5" width="18" height="7" rx="2"/><rect x="3" y="13.5" width="18" height="7" rx="2"/><path d="M7 7h.01M7 17h.01"/>',
+  phone:'<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/>',
+  printer:'<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
+  media:'<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M8 2.5l4 3.5 4-3.5M8 21h8"/>',
+  camera:'<path d="M3 8h3.5L8.5 5h7l2 3H21v11H3z"/><circle cx="12" cy="13" r="3.5"/>',
+  iot:'<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M10 2.5v4M14 2.5v4M10 17.5v4M14 17.5v4M2.5 10h4M2.5 14h4M17.5 10h4M17.5 14h4"/>',
+  network:'<rect x="2.5" y="8" width="19" height="8" rx="2"/><path d="M6.5 12h.01M10 12h.01M13.5 12h.01M17 12h.01"/>',
+  remote:'<path d="M7 18.5a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19.3 11a3.8 3.8 0 0 1-.8 7.5z"/>',
+  unknown:'<circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.4M12 16.8h.01"/>',
+  hop:'<circle cx="12" cy="12" r="3"/>',
+  share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/>',
+  refresh:'<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/>',
+  download:'<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
+  fit:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  activity:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  ext:'<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  terminal:'<path d="M4 17l6-5-6-5M12 19h8"/>',
+  radar:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/>',
+};
+$('#icons').innerHTML = Object.entries(ICONS).map(([k, p]) =>
+  `<symbol id="i-${k}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</symbol>`).join('');
+const TYPES = {internet:['#94a3b8','Internet'], hop:['#64748b','ISP hop'], router:['#f59e0b','Router'], 'this-host':['#4f8cff','This host'],
+  network:['#eab308','Network gear'], computer:['#a78bfa','Computer'], server:['#34d399','Server'], phone:['#f472b6','Phone'],
+  printer:['#38bdf8','Printer'], media:['#fb7185','Media/TV'], camera:['#fbbf24','Camera'], iot:['#2dd4bf','IoT'],
+  remote:['#64748b','Remote host'], unknown:['#94a3b8','Unknown']};
+const tcol = t => (TYPES[t] || TYPES.unknown)[0];
+const SVC = {21:'ftp',22:'ssh',23:'telnet',25:'smtp',53:'dns',80:'http',81:'http',88:'kerberos',110:'pop3',139:'netbios',143:'imap',443:'https',445:'smb',
+  515:'lpd',548:'afp',554:'rtsp',631:'ipp',853:'dns-tls',993:'imaps',995:'pop3s',1883:'mqtt',3000:'http',3306:'mysql',3389:'rdp',5000:'http/upnp',5223:'apns',
+  5228:'gcm',5432:'postgres',5900:'vnc',6379:'redis',7000:'airplay',8000:'http',8008:'cast',8009:'cast',8080:'http',8443:'https',8888:'http',9000:'http',
+  9100:'jetdirect',32400:'plex',62078:'iphone-sync'};
 const WEB = new Set([80,81,443,3000,5000,8000,8080,8443,8888,9000]);
-let S = null, sel = null, showConns = false, showOff = true, detailsFor = null;
 
+const st = {S: null, sel: null, layout: 'radial', conns: false, off: true, sort: {k: 'ip', dir: 1}, stF: 'all', evF: 'all',
+            detailsFor: null, seenEv: 0, lastEvT: null, last: {}};
 const fmtRate = b => b < 1024 ? b.toFixed(0)+' B/s' : b < 1048576 ? (b/1024).toFixed(1)+' KB/s' : (b/1048576).toFixed(2)+' MB/s';
-const ago = t => { if (!t) return '-'; const s = Date.now()/1000 - t; return s < 60 ? Math.round(s)+'s ago' : s < 3600 ? Math.round(s/60)+'m ago' : s < 86400 ? Math.round(s/3600)+'h ago' : new Date(t*1000).toLocaleDateString(); };
-const name = d => d.label || d.hostname || d.vendor || '';
-const rttColor = r => r == null ? '#484f58' : r < 10 ? '#3fb950' : r < 100 ? '#d29922' : '#f85149';
+const ago = t => { if (!t) return '–'; const s = Date.now()/1000 - t; return s < 5 ? 'just now' : s < 60 ? Math.round(s)+'s ago' : s < 3600 ? Math.round(s/60)+'m ago' : s < 86400 ? Math.round(s/3600)+'h ago' : Math.round(s/86400)+'d ago'; };
+const nm = d => d.label || d.hostname || d.vendor || d.ip;
+const rttC = r => r == null ? C.dim : r < 10 ? C.ok : r < 100 ? C.warn : C.bad;
+const ipNum = ip => ip.split('.').reduce((a, o) => a * 256 + +o, 0);
+const icon = (k, cls = 'ic') => `<svg class="${cls}"><use href="#i-${k}"/></svg>`;
+const av = d => `<span class="av" style="--c:${tcol(d.type)}">${icon(ICONS[d.type] ? d.type : 'unknown')}<i class="st-${d.status}"></i></span>`;
+const changed = (k, v) => { const s = JSON.stringify(v); if (st.last[k] === s) return false; st.last[k] = s; return true; };
 
-// ---------- graph ----------
-const svg = d3.select('#graph'), root = svg.append('g');
-const linkG = root.append('g'), nodeG = root.append('g');
-svg.call(d3.zoom().scaleExtent([0.2, 4]).on('zoom', e => root.attr('transform', e.transform)));
-const sim = d3.forceSimulation()
-  .force('link', d3.forceLink().id(d => d.id).distance(l => l.dist).strength(0.7))
-  .force('charge', d3.forceManyBody().strength(-260))
-  .force('x', d3.forceX().strength(0.04)).force('y', d3.forceY().strength(0.04))
-  .force('collide', d3.forceCollide(30))
-  .on('tick', () => {
-    linkG.selectAll('line').attr('x1', l => l.source.x).attr('y1', l => l.source.y).attr('x2', l => l.target.x).attr('y2', l => l.target.y);
-    nodeG.selectAll('g.n').attr('transform', n => `translate(${n.x},${n.y})`);
-  });
+function spark(el, series, w, h) {   // series: [{v:[...], c}]
+  const all = series.flatMap(s => s.v).filter(v => v != null);
+  const y = d3.scaleLinear([0, d3.max(all) || 1], [h - 2, 2]);
+  d3.select(el).selectAll('path').data(series).join('path').attr('fill', 'none').attr('stroke', s => s.c).attr('stroke-width', 1.5).attr('stroke-linejoin', 'round')
+    .attr('d', s => d3.line().defined(v => v != null).x((_, i) => s.v.length < 2 ? 0 : i * w / (s.v.length - 1)).y(y)(s.v));
+}
+
+// ---------------- graph ----------------
+const svg = d3.select('#graph'), root = svg.append('g'), linkG = root.append('g'), nodeG = root.append('g');
+let linkSel = linkG.selectAll('line'), nodeSel = nodeG.selectAll('g.n'), zoomK = 1, hoverId = null, didFit = false, userZoomed = false, adj = new Map();
+const zoom = d3.zoom().scaleExtent([0.15, 5]).on('zoom', e => {
+  root.attr('transform', e.transform); if (e.sourceEvent) userZoomed = true;
+  const big = e.transform.k > 1.15; if (big !== zoomK > 1.15) { zoomK = e.transform.k; styleLabels(); } zoomK = e.transform.k;
+});
+svg.call(zoom).on('dblclick.zoom', null).on('click', e => { if (e.target === svg.node()) deselect(); });
+function ticked() {
+  linkSel.attr('x1', l => l.source.x).attr('y1', l => l.source.y).attr('x2', l => l.target.x).attr('y2', l => l.target.y);
+  nodeSel.attr('transform', n => `translate(${n.x},${n.y})`);
+}
+const sim = d3.forceSimulation().alphaDecay(0.05)
+  .force('link', d3.forceLink().id(d => d.id).distance(l => l.dist).strength(0.6))
+  .force('charge', d3.forceManyBody().strength(-320).distanceMax(600))
+  .force('collide', d3.forceCollide(n => n.r + 16))
+  .on('tick', ticked)
+  .on('end', () => { if (!didFit && !userZoomed) { didFit = true; fit(); } });
 const resize = () => { const r = $('#graph').getBoundingClientRect(); svg.attr('viewBox', [-r.width/2, -r.height/2, r.width, r.height]); };
-addEventListener('resize', resize); resize();
+new ResizeObserver(resize).observe($('#canvas')); resize();
 const nodeMap = new Map(); let lastSig = '';
 
 function buildGraph() {
-  const N = [], L = [], m = S.meta;
-  const add = (id, o) => { let n = nodeMap.get(id); if (!n) nodeMap.set(id, n = {id}); Object.assign(n, o); N.push(n); return n; };
-  const devs = S.devices.filter(d => showOff || d.status !== 'offline');
-  const gw = devs.find(d => d.is_gateway), me = devs.find(d => d.is_self);
-  const hub = gw ? gw.ip : me ? me.ip : null;
-  const hops = (S.path || []).filter(h => h.ip && h.ip !== m.gateway).reverse();
-  add('internet', {type: 'internet', label: 'Internet', r: 22, fx: 0, fy: -70 - 42 * hops.length});
+  const S = st.S, N = [], L = [];
+  const add = (id, o) => { let n = nodeMap.get(id); if (!n) nodeMap.set(id, n = {id, x: (Math.random() - .5) * 40, y: (Math.random() - .5) * 40}); Object.assign(n, o); N.push(n); return n; };
+  const devs = S.devices.filter(d => st.off || d.status !== 'offline');
+  const gw = devs.find(d => d.is_gateway), me = devs.find(d => d.is_self), hub = gw ? gw.ip : me ? me.ip : null;
+  const ring = devs.filter(d => d.ip !== hub).sort((a, b) => (a.type || '').localeCompare(b.type || '') || ipNum(a.ip) - ipNum(b.ip));
+  const R = Math.max(180, ring.length * 15);
+  const hops = (S.path || []).filter(h => h.ip && h.ip !== S.meta.gateway).reverse();
+  const top = st.layout === 'radial' ? 50 : 90;
+  add('internet', {type: 'internet', label: 'Internet', r: 22, fx: 0, fy: -top - 46 * hops.length - 40});
   let prev = 'internet';
-  hops.forEach((h, i) => { add('hop:'+h.ip, {type: 'hop', label: h.ip, sub: h.rtt != null ? h.rtt+' ms' : '', r: 7, hop: h, fx: 0, fy: -42 * (hops.length - i) - 10});
-    L.push({source: prev, target: 'hop:'+h.ip, dist: 45, kind: 'path'}); prev = 'hop:'+h.ip; });
-  for (const d of devs) add(d.ip, {type: d.type || 'unknown', label: name(d) || d.ip, sub: d.ip, r: d.is_gateway ? 18 : d.is_self ? 15 : 12, dev: d});
-  if (hub) { L.push({source: prev, target: hub, dist: 60, kind: 'wan'}); nodeMap.get(hub).fx = 0; nodeMap.get(hub).fy = 0; }
-  for (const d of devs) if (d.ip !== hub) L.push({source: hub || 'internet', target: d.ip, dist: 110, kind: 'lan', dev: d});
-  if (showConns && me) {
+  hops.forEach((h, i) => {
+    add('hop:' + h.ip, {type: 'hop', label: h.ip, sub: h.rtt != null ? h.rtt.toFixed(1) + ' ms' : '', r: 5, hop: h, fx: 0, fy: -top - 46 * (hops.length - 1 - i) - 10});
+    L.push({source: prev, target: 'hop:' + h.ip, dist: 40, kind: 'path'}); prev = 'hop:' + h.ip;
+  });
+  const arc = (i, n, rad) => { const a = (-35 + 250 * (n === 1 ? 0.5 : i / (n - 1))) * Math.PI / 180; return [rad * Math.cos(a), rad * Math.sin(a)]; };
+  for (const d of devs) {
+    const n = add(d.ip, {type: d.type || 'unknown', label: nm(d), sub: d.ip, r: d.is_gateway ? 22 : d.is_self ? 19 : 16, dev: d});
+    if (d.ip === hub) { n.fx = 0; n.fy = 0; }
+    else if (st.layout === 'radial') { [n.fx, n.fy] = arc(ring.indexOf(d), ring.length, R); }
+    else if (!n.pinned) n.fx = n.fy = null;
+  }
+  if (hub) L.push({source: prev, target: hub, dist: 60, kind: 'wan'});
+  for (const d of devs) if (d.ip !== hub) L.push({source: hub || 'internet', target: d.ip, dist: 130, kind: 'lan', dev: d});
+  if (st.conns && me) {
     const agg = new Map();
     for (const c of S.conns) { const a = agg.get(c.remote) || {n: 0, procs: new Set(), ports: new Set(), rname: c.rname}; a.n++; a.procs.add(c.proc); a.ports.add(c.rport); agg.set(c.remote, a); }
-    for (const [ip, a] of agg) {
-      if (nodeMap.has(ip) && devs.some(d => d.ip === ip)) { L.push({source: me.ip, target: ip, dist: 90, kind: 'conn', n: a.n}); continue; }
-      add('r:'+ip, {type: 'remote', label: a.rname || ip, sub: [...a.procs].join(', '), r: 7, conn: {ip, ...a}});
-      L.push({source: me.ip, target: 'r:'+ip, dist: 150, kind: 'conn', n: a.n});
-    }
+    const remotes = [...agg].filter(([ip]) => !devs.some(d => d.ip === ip));
+    for (const [ip, a] of agg) if (devs.some(d => d.ip === ip)) L.push({source: me.ip, target: ip, dist: 90, kind: 'conn', n: a.n});
+    remotes.forEach(([ip, a], i) => {
+      const n = add('r:' + ip, {type: 'remote', label: a.rname || ip, sub: [...a.procs].slice(0, 2).join(', '), r: 9, conn: {ip, ...a}});
+      if (st.layout === 'radial') [n.fx, n.fy] = arc(i, remotes.length, R + 170); else if (!n.pinned) n.fx = n.fy = null;
+      L.push({source: me.ip, target: 'r:' + ip, dist: 170, kind: 'conn', n: a.n});
+    });
   }
-  for (const id of [...nodeMap.keys()]) if (!N.some(n => n.id === id)) nodeMap.delete(id);
+  const ids = new Set(N.map(n => n.id));
+  for (const id of nodeMap.keys()) if (!ids.has(id)) nodeMap.delete(id);
+  adj = new Map(N.map(n => [n.id, new Set([n.id])]));
+  for (const l of L) { adj.get(l.source)?.add(l.target); adj.get(l.target)?.add(l.source); }
   return {N, L};
 }
 
 function drawGraph() {
-  const {N, L} = buildGraph(), t = S.traffic;
-  const sig = N.map(n => n.id).join() + '|' + L.map(l => l.kind + (l.source.id || l.source) + (l.target.id || l.target)).join();
+  const {N, L} = buildGraph(), t = st.S.traffic, tot = t.rx_bps + t.tx_bps;
+  const lid = l => l.kind + (l.source.id || l.source) + '>' + (l.target.id || l.target);
+  const sig = N.map(n => n.id + (n.fx ?? '')).join() + '|' + L.map(lid).join();
   sim.nodes(N); sim.force('link').links(L);
-  if (sig !== lastSig) { sim.alpha(lastSig ? 0.4 : 1).restart(); lastSig = sig; }
-  const wanW = 1.5 + Math.min(8, Math.log10(1 + (t.rx_bps + t.tx_bps) / 1024) * 2.5);
-  const wanDur = (t.rx_bps + t.tx_bps) > 1024 ? Math.max(0.3, 3 - Math.log10((t.rx_bps + t.tx_bps) / 1024)) : 0;
-  linkG.selectAll('line').data(L, l => l.kind + (l.source.id || l.source) + (l.target.id || l.target)).join('line')
+  if (sig !== lastSig) { sim.alpha(lastSig ? 0.5 : 1).restart(); lastSig = sig; didFit = false; }
+  const wanW = 2 + Math.min(8, Math.log10(1 + tot / 1024) * 2.5), wanDur = tot > 1024 ? Math.max(0.25, 2.5 - Math.log10(tot / 1024)) : 0;
+  linkSel = linkG.selectAll('line').data(L, lid).join('line')
     .attr('class', l => l.kind === 'wan' && wanDur ? 'wan' : null)
     .style('animation-duration', l => l.kind === 'wan' && wanDur ? wanDur + 's' : null)
-    .attr('stroke', l => l.kind === 'lan' ? rttColor(l.dev.rtt) : l.kind === 'conn' ? '#58a6ff' : '#8b949e')
-    .attr('stroke-opacity', l => l.kind === 'lan' && l.dev.status !== 'online' ? 0.25 : l.kind === 'conn' ? 0.45 : 0.8)
-    .attr('stroke-width', l => l.kind === 'wan' ? wanW : l.kind === 'conn' ? Math.min(4, 0.8 + l.n * 0.4) : 1.5)
-    .attr('stroke-dasharray', l => l.kind === 'wan' ? '8 4' : l.kind === 'lan' && l.dev.status === 'stale' ? '3 3' : l.kind === 'path' ? '2 3' : null);
-  const g = nodeG.selectAll('g.n').data(N, n => n.id).join(enter => {
+    .attr('stroke', l => l.kind === 'lan' ? rttC(l.dev.rtt) : l.kind === 'conn' ? C.acc : l.kind === 'wan' ? '#7c9cff' : C.dim)
+    .attr('stroke-opacity', l => l.kind === 'lan' ? (l.dev.status === 'online' ? 0.55 : 0.18) : l.kind === 'conn' ? 0.4 : 0.8)
+    .attr('stroke-width', l => l.kind === 'wan' ? wanW : l.kind === 'conn' ? Math.min(4, 0.8 + l.n * 0.35) : 1.6)
+    .attr('stroke-dasharray', l => l.kind === 'wan' ? '8 4' : l.kind === 'lan' && l.dev.status === 'stale' ? '4 4' : l.kind === 'path' ? '2 4' : null);
+  nodeSel = nodeG.selectAll('g.n').data(N, n => n.id).join(enter => {
     const e = enter.append('g').attr('class', 'n').style('cursor', 'pointer')
-      .call(d3.drag().on('start', (ev, n) => { if (!ev.active) sim.alphaTarget(0.2).restart(); n.fx = n.x; n.fy = n.y; })
-        .on('drag', (ev, n) => { n.fx = ev.x; n.fy = ev.y; })
-        .on('end', (ev, n) => { if (!ev.active) sim.alphaTarget(0); }))   // stays pinned where dropped
-      .on('click', (ev, n) => { if (n.dev) select(n.dev.ip); })
-      .on('dblclick', (ev, n) => { ev.stopPropagation(); if (n.id !== 'internet') n.fx = n.fy = null; sim.alpha(0.3).restart(); });
-    e.append('circle').attr('class', 'ring').attr('fill', 'none').attr('stroke-width', 2);
-    e.append('circle').attr('class', 'body').attr('stroke', '#0d1117').attr('stroke-width', 2);
-    e.append('text').attr('class', 'glyph').attr('text-anchor', 'middle').attr('dy', '0.35em').attr('fill', '#0d1117').attr('font-weight', 700).attr('pointer-events', 'none');
-    e.append('text').attr('class', 'lbl').attr('text-anchor', 'middle').attr('fill', '#e6edf3').attr('font-size', 11).attr('pointer-events', 'none');
-    e.append('text').attr('class', 'sub').attr('text-anchor', 'middle').attr('fill', '#8b949e').attr('font-size', 10).attr('pointer-events', 'none');
-    e.append('title');
+      .call(d3.drag()
+        .on('start', (ev, n) => { if (!ev.active) sim.alphaTarget(0.15).restart(); n.fx = n.x; n.fy = n.y; })
+        .on('drag', (ev, n) => { n.fx = ev.x; n.fy = ev.y; hideTip(); })
+        .on('end', (ev, n) => { if (!ev.active) sim.alphaTarget(0); n.pinned = true; }))
+      .on('click', (ev, n) => { ev.stopPropagation(); if (n.dev) select(n.dev.ip); })
+      .on('dblclick', (ev, n) => { ev.stopPropagation(); if (st.layout === 'force' && n.dev && !n.dev.is_gateway) { n.pinned = false; n.fx = n.fy = null; sim.alpha(0.3).restart(); } })
+      .on('mouseenter', (ev, n) => { hoverId = n.id; styleFocus(); showTip(ev, n); })
+      .on('mousemove', (ev, n) => showTip(ev, n))
+      .on('mouseleave', () => { hoverId = null; styleFocus(); hideTip(); });
+    e.append('circle').attr('class', 'halo').attr('fill', 'none');
+    e.append('circle').attr('class', 'body').attr('stroke-width', 2);
+    e.append('use').attr('class', 'icon');
+    e.append('circle').attr('class', 'stat').attr('r', 4.5).attr('stroke', C.bg).attr('stroke-width', 2);
+    e.append('text').attr('class', 'lbl').attr('text-anchor', 'middle').attr('fill', C.fg).attr('font-size', 11.5).attr('font-weight', 550).attr('paint-order', 'stroke').attr('stroke', C.bg).attr('stroke-width', 3);
+    e.append('text').attr('class', 'sub').attr('text-anchor', 'middle').attr('fill', C.mut).attr('font-size', 10).attr('font-family', 'ui-monospace,Menlo,monospace').attr('paint-order', 'stroke').attr('stroke', C.bg).attr('stroke-width', 3);
     return e;
   });
-  const fresh = d => d && Date.now()/1000 - d.first_seen < 600;
-  g.attr('opacity', n => n.dev && n.dev.status === 'offline' ? 0.35 : 1);
-  g.select('circle.body').attr('r', n => n.r).attr('fill', n => TYPES[n.type]?.[0] || '#6e7681');
-  g.select('circle.ring').attr('r', n => n.r + 5)
-    .attr('stroke', n => n.dev && n.dev.ip === sel ? '#e6edf3' : fresh(n.dev) ? '#3fb950' : n.dev?.status === 'stale' ? '#d29922' : 'none')
-    .attr('stroke-dasharray', n => n.dev?.status === 'stale' ? '3 3' : null);
-  g.select('text.glyph').text(n => n.r >= 11 ? TYPES[n.type]?.[1] : '').attr('font-size', n => n.r > 14 ? 10 : 8);
-  g.selectAll('text.lbl,text.sub').attr('text-anchor', n => n.hop ? 'start' : 'middle').attr('x', n => n.hop ? 14 : 0);
-  g.select('text.lbl').attr('y', n => n.hop ? -1 : n.r + 14).text(n => n.label.length > 24 ? n.label.slice(0, 23) + '…' : n.label);
-  g.select('text.sub').attr('y', n => n.hop ? 11 : n.r + 26).text(n => n.sub && n.sub !== n.label ? n.sub.slice(0, 30) : '');
-  g.select('title').text(n => n.dev ? `${n.dev.ip}\n${n.dev.mac || ''}\n${n.dev.vendor || ''}\nRTT ${n.dev.rtt ?? '-'} ms\nports ${(n.dev.ports || []).join(', ')}`
-    : n.conn ? `${n.conn.ip}\n${[...n.conn.procs].join(', ')}\nports ${[...n.conn.ports].join(', ')}\n${n.conn.n} conn(s)` : n.label);
+  const fresh = d => d && Date.now() / 1000 - d.first_seen < 600;
+  nodeSel.select('circle.body').attr('r', n => n.r).attr('fill', n => n.type === 'hop' ? C.dim : '#121a24').attr('stroke', n => n.type === 'hop' ? 'none' : tcol(n.type));
+  nodeSel.select('use.icon').attr('href', n => n.type === 'hop' ? null : '#i-' + (ICONS[n.type] ? n.type : 'unknown'))
+    .attr('x', n => -n.r * .58).attr('y', n => -n.r * .58).attr('width', n => n.r * 1.16).attr('height', n => n.r * 1.16).attr('color', n => tcol(n.type));
+  nodeSel.select('circle.stat').attr('cx', n => n.r * .72).attr('cy', n => n.r * .72)
+    .attr('fill', n => n.dev ? ({online: C.ok, stale: C.warn, offline: C.dim})[n.dev.status] : 'none').attr('stroke-opacity', n => n.dev ? 1 : 0);
+  nodeSel.select('circle.halo').attr('r', n => n.r + 6).attr('stroke-width', n => n.dev?.ip === st.sel ? 2.5 : 2)
+    .attr('stroke', n => n.dev?.ip === st.sel ? C.acc : fresh(n.dev) ? C.ok : 'none')
+    .attr('class', n => 'halo' + (n.dev?.ip !== st.sel && fresh(n.dev) ? ' newring' : ''));
+  for (const c of ['lbl', 'sub']) nodeSel.select('text.' + c).attr('text-anchor', n => n.hop ? 'start' : 'middle').attr('x', n => n.hop ? 12 : 0);
+  nodeSel.select('text.lbl').attr('y', n => n.hop ? -1 : n.r + 16).text(n => n.label.length > 26 ? n.label.slice(0, 25) + '…' : n.label);
+  nodeSel.select('text.sub').attr('y', n => n.hop ? 11 : n.r + 28).text(n => n.sub && n.sub !== n.label ? n.sub.slice(0, 32) : '');
+  styleFocus(); styleLabels();
+  // radial = every node has a fixed position: place + fit now instead of waiting on the simulation
+  if (st.layout === 'radial' && !didFit) { sim.tick(); ticked(); if (!userZoomed) { didFit = true; fit(0); } }
 }
 
-// ---------- panels ----------
+function styleFocus() {   // dim everything not adjacent to the hovered (or selected) node
+  const f = hoverId || (st.sel && nodeMap.has(st.sel) ? st.sel : null), nb = f && adj.get(f);
+  nodeSel.attr('opacity', n => nb ? (nb.has(n.id) ? 1 : 0.22) : n.dev?.status === 'offline' ? 0.4 : 1);
+  linkSel.attr('opacity', l => nb ? ((l.source.id === f || l.target.id === f) ? 1 : 0.12) : 1);
+}
+function styleLabels() {   // declutter: with many nodes, labels only when zoomed in / focused
+  const many = nodeSel.size() > 35, f = hoverId || st.sel;
+  nodeSel.selectAll('text').attr('display', n => !many || zoomK > 1.15 || n.id === f || n.type === 'router' || n.type === 'this-host' || n.type === 'internet' ? null : 'none');
+}
+function showTip(ev, n) {
+  const r = $('#canvas').getBoundingClientRect(), d = n.dev, tip = $('#tip');
+  const row = (k, v) => v == null || v === '' ? '' : `<div class="row"><span>${k}</span><span class="mono">${esc(v)}</span></div>`;
+  tip.innerHTML = d ? `<h4>${esc(nm(d))}</h4>${row('IP', d.ip)}${row('MAC', d.mac)}${row('Vendor', d.vendor)}${row('Type', (TYPES[d.type] || TYPES.unknown)[1])}
+      ${row('RTT', d.rtt != null ? d.rtt.toFixed(1) + ' ms' : '–')}${row('Ports', (d.ports || []).join(', '))}${row('Status', d.status)}`
+    : n.conn ? `<h4>${esc(n.conn.rname || n.conn.ip)}</h4>${row('IP', n.conn.ip)}${row('Process', [...n.conn.procs].join(', '))}${row('Ports', [...n.conn.ports].join(', '))}${row('Sockets', n.conn.n)}`
+    : n.hop ? `<h4>Hop ${n.hop.hop}</h4>${row('IP', n.hop.ip)}${row('RTT', n.hop.rtt != null ? n.hop.rtt + ' ms' : '')}` : `<h4>${esc(n.label)}</h4>`;
+  tip.style.display = 'block';
+  const x = ev.clientX - r.left + 14, y = ev.clientY - r.top + 14;
+  tip.style.left = Math.min(x, r.width - tip.offsetWidth - 8) + 'px'; tip.style.top = Math.min(y, r.height - tip.offsetHeight - 8) + 'px';
+}
+const hideTip = () => $('#tip').style.display = 'none';
+function fit(ms = 450) {
+  userZoomed = false;
+  const b = root.node().getBBox(); if (!b.width) return;
+  const r = $('#graph').getBoundingClientRect(), k = Math.min(1.6, 0.88 * Math.min(r.width / b.width, r.height / b.height));
+  (ms ? svg.transition().duration(ms) : svg).call(zoom.transform, d3.zoomIdentity.scale(k).translate(-(b.x + b.width / 2), -(b.y + b.height / 2)));
+}
+
+// ---------------- panels ----------------
 function drawHeader() {
-  const m = S.meta, t = S.traffic, c = {online: 0, stale: 0, offline: 0};
-  S.devices.forEach(d => c[d.status]++);
-  $('#net').innerHTML = m.cidr ? `<b>${esc(m.cidr)}</b> on ${esc(m.iface)} · gw ${esc(m.gateway)}` : 'starting…';
-  $('#counts').innerHTML = `<b style="color:var(--ok)">${c.online}</b> online · ${c.stale} stale · ${c.offline} offline`;
-  $('#rates').innerHTML = `↓ <b>${fmtRate(t.rx_bps)}</b> ↑ <b>${fmtRate(t.tx_bps)}</b>`;
-  $('#scan').textContent = m.scanning ? 'scanning…' : 'scanned ' + ago(m.last_scan);
+  const {meta: m, traffic: t, devices, conns, events} = st.S;
+  const c = {online: 0, stale: 0, offline: 0}; devices.forEach(d => c[d.status]++);
+  $('#net').innerHTML = m.cidr ? `<span>Network <b>${esc(m.cidr)}</b></span><span>${esc(m.iface)} <b>${esc(m.ip)}</b></span><span>Gateway <b>${esc(m.gateway)}</b></span>` : 'starting…';
   $('#err').style.display = m.error ? 'block' : 'none'; $('#err').textContent = m.error || '';
-  const h = t.history, sp = d3.select('#spark');
-  if (h.length > 1) {
-    const x = d3.scaleLinear([h[0][0], h[h.length-1][0]], [0, 140]), y = d3.scaleLinear([0, d3.max(h, p => Math.max(p[1], p[2])) || 1], [25, 1]);
-    sp.selectAll('path').data([[1, '#3fb950'], [2, '#58a6ff']]).join('path').attr('fill', 'none').attr('stroke', d => d[1]).attr('stroke-width', 1.2)
-      .attr('d', ([i]) => d3.line(p => x(p[0]), p => y(p[i]))(h));
-  }
+  $('#stDev').innerHTML = `${c.online}<small>/ ${devices.length}</small>`;
+  $('#stDevD').textContent = `${c.stale} stale · ${c.offline} offline`;
+  const gw = devices.find(d => d.is_gateway);
+  $('#stGw').innerHTML = gw?.rtt != null ? `<span style="color:${rttC(gw.rtt)}">${gw.rtt.toFixed(1)}</span><small>ms</small>` : '–';
+  const gh = (gw?.rtt_hist || []).filter(v => v != null);
+  $('#stGwD').textContent = gh.length > 1 ? `avg ${d3.mean(gh).toFixed(1)} · max ${d3.max(gh).toFixed(1)} ms` : (gw ? 'collecting…' : 'no gateway');
+  if (gw) spark('#spGw', [{v: gw.rtt_hist || [], c: C.acc}], 80, 28);
+  $('#stTp').innerHTML = `${fmtRate(t.rx_bps + t.tx_bps).replace(/ (\S+)$/, '<small>$1</small>')}`;
+  $('#stTpD').innerHTML = `<span style="color:${C.ok}">↓ ${fmtRate(t.rx_bps)}</span> · <span style="color:${C.acc}">↑ ${fmtRate(t.tx_bps)}</span>`;
+  spark('#spTp', [{v: t.history.map(p => p[1]), c: C.ok}, {v: t.history.map(p => p[2]), c: C.acc}], 80, 28);
+  const procs = d3.rollups(conns, v => v.length, c => c.proc).sort((a, b) => b[1] - a[1]);
+  $('#stCn').textContent = conns.length;
+  $('#stCnD').textContent = procs.length ? `${procs.length} processes · top ${procs[0][0]}` : 'none';
+  const warns = events.filter(e => e.level !== 'info');
+  $('#stAl').innerHTML = `<span style="color:${warns.length ? C.warn : C.fg}">${warns.length}</span>`;
+  $('#stAlD').textContent = warns.length ? warns[warns.length - 1].msg : 'no warnings';
+  $('#bdDev').textContent = devices.length; $('#bdAct').textContent = conns.length;
+  const unseen = events.length - st.seenEv; $('#bdEv').textContent = unseen > 0 && !$('#events').classList.contains('on') ? unseen : events.length;
+  $('#bdEv').classList.toggle('hot', unseen > 0 && !$('#events').classList.contains('on'));
+  $('#empty').classList.toggle('show', !devices.length);
+  $('#emptyTxt').innerHTML = m.error ? esc(m.error) : `Discovering devices on <b class="mono">${esc(m.cidr || 'your network')}</b>…`;
+  scanStatus();
+}
+function scanStatus() {
+  const m = st.S?.meta; if (!m) return;
+  $('#pulse').classList.toggle('busy', !!m.scanning);
+  const next = m.last_scan ? Math.max(0, Math.round(m.last_scan + m.interval - Date.now() / 1000)) : null;
+  $('#scantxt').textContent = m.scanning ? `Scanning${m.phase ? ' · ' + m.phase : ''}…` : m.last_scan ? `Scanned ${ago(m.last_scan)}${m.scan_secs ? ` in ${m.scan_secs}s` : ''} · next ${next}s` : 'Waiting…';
 }
 
 function drawDevices() {
-  const q = $('#filter').value.toLowerCase().trim();
-  const rows = S.devices.filter(d => !q || [d.ip, d.mac, d.hostname, d.label, d.vendor, d.type, d.notes, ...(d.ports || [])].join(' ').toLowerCase().includes(q));
-  $('#devBody').innerHTML = rows.map(d => `<tr data-ip="${esc(d.ip)}" class="${d.ip === sel ? 'sel' : ''}">
-    <td class="mono"><span class="dot ${d.status}"></span>${esc(d.ip)}</td>
-    <td>${esc(d.label || d.hostname || '')}<div class="mut">${esc(d.vendor || d.mac || '')}</div></td>
-    <td>${esc(d.type)}</td><td class="mono" style="color:${rttColor(d.rtt)}">${d.rtt != null ? d.rtt.toFixed(1) : '-'}</td>
-    <td class="mono">${(d.ports || []).join(' ')}</td></tr>`).join('');
+  const q = $('#filter').value.toLowerCase().trim(), {k, dir} = st.sort;
+  const key = {name: d => nm(d).toLowerCase(), ip: d => ipNum(d.ip), rtt: d => d.rtt ?? 1e9, ports: d => -(d.ports || []).length}[k];
+  const rows = st.S.devices
+    .filter(d => st.stF === 'all' || (st.stF === 'online' ? d.status !== 'offline' : d.status === 'offline'))
+    .filter(d => !q || [d.ip, d.mac, d.hostname, d.label, d.vendor, d.type, d.notes, ...(d.ports || [])].join(' ').toLowerCase().includes(q))
+    .sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * dir);
+  $$('#devices th').forEach(th => th.innerHTML = th.textContent.replace(/[ ↑↓]+$/, '') + (th.dataset.k === k ? ` <span class="arr">${dir > 0 ? '↑' : '↓'}</span>` : ''));
+  $('#devBody').innerHTML = rows.map(d => `<tr data-ip="${esc(d.ip)}" class="${d.ip === st.sel ? 'sel' : ''}">
+    <td><div class="dev">${av(d)}<div style="min-width:0"><div class="nm">${esc(nm(d))}</div><div class="mut sm">${esc((TYPES[d.type] || TYPES.unknown)[1])}${d.label && d.vendor ? ' · ' + esc(d.vendor) : ''}</div></div></div></td>
+    <td class="mono">${esc(d.ip)}<div class="mut sm">${esc(d.mac || '')}</div></td>
+    <td><span class="rtt" style="color:${rttC(d.rtt)}">${d.rtt != null ? d.rtt.toFixed(1) : '–'}</span></td>
+    <td class="mono mut">${(d.ports || []).length || '–'}</td></tr>`).join('') || `<tr><td colspan="4" class="empty">${st.S.devices.length ? 'No matches' : 'Scanning…'}</td></tr>`;
 }
 
 function drawDetails() {
-  const d = S.devices.find(x => x.ip === sel);
+  const d = st.S.devices.find(x => x.ip === st.sel);
   if (!d) return;
-  const linkFor = p => WEB.has(p) ? `<a class="pill mono" target="_blank" rel="noopener" href="${[443, 8443].includes(p) ? 'https' : 'http'}://${esc(d.ip)}:${p}">${p}</a>` : `<span class="pill mono">${p}</span>`;
-  const conns = S.conns.filter(c => c.remote === d.ip);
-  const info = `<h3 style="margin:0">${esc(name(d) || d.ip)}</h3>
-    <dl><dt>Status</dt><dd><span class="dot ${d.status}"></span>${d.status} <span class="mut">via ${(d.seen_by || []).join(', ') || '-'}</span></dd>
-    <dt>IP</dt><dd class="mono">${esc(d.ip)}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || '-')}</dd>
-    <dt>Vendor</dt><dd>${esc(d.vendor || '-')}</dd><dt>Hostname</dt><dd>${esc(d.hostname || '-')}</dd>
-    <dt>Type</dt><dd>${esc(d.type)}</dd><dt>RTT</dt><dd style="color:${rttColor(d.rtt)}">${d.rtt ?? '-'} ms</dd>
-    <dt>First seen</dt><dd>${new Date(d.first_seen * 1000).toLocaleString()}</dd><dt>Last seen</dt><dd>${ago(d.last_seen)}</dd>
-    <dt>Open ports</dt><dd>${(d.ports || []).map(linkFor).join('') || '-'}</dd>
-    ${(d.ports || []).includes(22) ? `<dt>SSH</dt><dd class="mono">ssh ${esc(d.ip)}</dd>` : ''}
-    <dt>Live conns</dt><dd>${conns.length ? conns.map(c => `${esc(c.proc)} → :${c.rport}`).join('<br>') : '-'}</dd></dl>`;
-  if (detailsFor !== d.ip) {   // rebuild form only on selection change so typing isn't clobbered by refreshes
-    detailsFor = d.ip;
-    $('#details').innerHTML = `<div id="dInfo"></div>
-      <label class="mut">Label</label><input id="dLabel" style="width:100%" maxlength="100">
-      <label class="mut">Notes</label><textarea id="dNotes" rows="3" style="width:100%" maxlength="2000"></textarea>
-      <div style="display:flex;gap:6px;margin:6px 0"><button id="dSave">Save</button><button id="dProbe" title="ping ×5, traceroute, TCP 1-1024 + common ports">Deep probe</button></div>
-      <div id="dOut"></div>`;
+  if (st.detailsFor !== d.ip) {   // the form is rebuilt only on selection change, so refreshes never clobber typing
+    st.detailsFor = d.ip;
+    $('#details').innerHTML = `<div class="det"><div id="dHead"></div>
+      <div class="actions" id="dAct"></div>
+      <div id="dInfo"></div>
+      <div class="sec"><h3>Label & notes</h3>
+        <input id="dLabel" maxlength="100" placeholder="Friendly name, e.g. Office printer" style="margin-bottom:6px">
+        <textarea id="dNotes" rows="3" maxlength="2000" placeholder="Notes: location, owner, VLAN…"></textarea>
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center"><button id="dSave">Save</button><span class="mut sm" id="dSaved"></span></div></div>
+      <div id="dOut"></div></div>`;
     $('#dLabel').value = d.label || ''; $('#dNotes').value = d.notes || '';
-    $('#dSave').onclick = async () => { await post('/api/device', {ip: d.ip, label: $('#dLabel').value, notes: $('#dNotes').value}); refresh(); };
-    $('#dProbe').onclick = async () => {
-      $('#dOut').innerHTML = '<p class="mut">probing… (~10–30s)</p>';
-      const r = await (await fetch('/api/probe?ip=' + encodeURIComponent(d.ip))).json();
-      $('#dOut').innerHTML = r.error ? `<pre>${esc(r.error)}</pre>` : `<pre>${esc(r.ping)}</pre>
-        <b>Traceroute</b><pre>${r.traceroute.map(h => `${h.hop}\t${h.ip || '*'}\t${h.rtt ?? ''} ms`).join('\n')}</pre>
-        <b>Open ports</b><pre>${r.ports.map(p => `${p.port}/tcp\t${p.service}`).join('\n') || 'none'}</pre>`;
+    $('#dSave').onclick = async () => {
+      const r = await post('/api/device', {ip: d.ip, label: $('#dLabel').value, notes: $('#dNotes').value});
+      $('#dSaved').textContent = r.ok ? 'Saved ✓' : 'Save failed'; refresh();
     };
+    const web = (d.ports || []).find(p => WEB.has(p));
+    $('#dAct').innerHTML = `<button id="dProbe" class="primary">${icon('radar')}Deep probe</button>
+      ${web ? `<a href="${[443, 8443].includes(web) ? 'https' : 'http'}://${esc(d.ip)}:${web}" target="_blank" rel="noopener"><button>${icon('ext')}Open web UI</button></a>` : ''}
+      <button data-copy="${esc(d.ip)}">${icon('copy')}Copy IP</button>
+      ${(d.ports || []).includes(22) ? `<button data-copy="ssh ${esc(d.ip)}">${icon('terminal')}Copy ssh</button>` : ''}
+      ${d.mac ? `<button data-copy="${esc(d.mac)}">${icon('copy')}Copy MAC</button>` : ''}`;
+    $('#dProbe').onclick = () => probe(d.ip);
   }
-  $('#dInfo').innerHTML = info;
+  $('#dHead').innerHTML = `<div class="dhead">${av(d)}<div style="min-width:0"><h2>${esc(nm(d))}</h2>
+    <div class="mut"><span class="pillst" style="color:${({online: C.ok, stale: C.warn, offline: C.mut})[d.status]}">● ${d.status}</span>
+    ${esc((TYPES[d.type] || TYPES.unknown)[1])} · seen via ${(d.seen_by || []).join(', ') || '–'}</div></div></div>`;
+  const h = d.rtt_hist || [], ok = h.filter(v => v != null);
+  const jit = ok.length > 1 ? d3.mean(ok.slice(1).map((v, i) => Math.abs(v - ok[i]))) : null;
+  const loss = h.length ? Math.round(100 * (h.length - ok.length) / h.length) : null;
+  const conns = st.S.conns.filter(c => c.remote === d.ip);
+  $('#dInfo').innerHTML = `<div class="sec"><h3>Identity</h3><dl class="kv">
+      <dt>IP</dt><dd class="mono">${esc(d.ip)}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || '–')}</dd>
+      <dt>Vendor</dt><dd>${esc(d.vendor || '–')}</dd><dt>Hostname</dt><dd>${esc(d.hostname || '–')}</dd>
+      <dt>First seen</dt><dd>${new Date(d.first_seen * 1000).toLocaleString()}</dd><dt>Last seen</dt><dd>${ago(d.last_seen)}</dd></dl></div>
+    <div class="sec"><h3>Latency <span>${h.length} scans</span></h3><svg id="dSpark" width="100%" height="44" viewBox="0 0 400 44" preserveAspectRatio="none"></svg>
+      <div class="mini"><div><b style="color:${rttC(d.rtt)}">${d.rtt != null ? d.rtt.toFixed(1) : '–'}</b><span>now ms</span></div>
+      <div><b>${ok.length ? d3.mean(ok).toFixed(1) : '–'}</b><span>avg ms</span></div>
+      <div><b>${jit != null ? jit.toFixed(1) : '–'}</b><span>jitter ms</span></div>
+      <div><b style="color:${loss ? C.warn : C.fg}">${loss ?? '–'}${loss != null ? '%' : ''}</b><span>loss</span></div></div></div>
+    <div class="sec"><h3>Open ports <span>${(d.ports || []).length}</span></h3>${(d.ports || []).map(p => WEB.has(p)
+      ? `<a class="chip" target="_blank" rel="noopener" href="${[443, 8443].includes(p) ? 'https' : 'http'}://${esc(d.ip)}:${p}"><b>${p}</b>${SVC[p] || ''} ↗</a>`
+      : `<span class="chip"><b>${p}</b>${SVC[p] || ''}</span>`).join('') || '<span class="mut">none of the common ports — try Deep probe</span>'}</div>
+    ${conns.length ? `<div class="sec"><h3>Live connections from this host</h3>${conns.map(c => `<div class="mono sm">${esc(c.proc)} → :${c.rport} ${SVC[c.rport] || ''}</div>`).join('')}</div>` : ''}`;
+  spark('#dSpark', [{v: h, c: C.acc}], 400, 44);
+}
+
+async function probe(ip) {
+  const b = $('#dProbe'); b.disabled = true; b.innerHTML = '<span class="spin"></span>Probing…';
+  $('#dOut').innerHTML = '<div class="sec mut">Running ping ×5, traceroute and a TCP 1–1024 scan (10–30s)…</div>';
+  try {
+    const r = await (await fetch('/api/probe?ip=' + encodeURIComponent(ip))).json();
+    if (st.sel !== ip) return;
+    const mx = d3.max(r.traceroute || [], h => h.rtt) || 1;
+    $('#dOut').innerHTML = r.error ? `<div class="sec" style="color:${C.bad}">${esc(r.error)}</div>` : `
+      <div class="sec"><h3>Ping</h3><div class="mono sm">${esc(r.ping) || 'no reply'}</div></div>
+      <div class="sec"><h3>Traceroute <span>${r.traceroute.length} hops</span></h3>${r.traceroute.map(h => `<div class="hop"><span class="mut">${h.hop}</span><span>${esc(h.ip || '*')}</span>
+        <span>${h.rtt != null ? h.rtt.toFixed(1) + ' ms' : ''}</span><div class="hbar" style="width:${h.rtt ? Math.max(4, 70 * h.rtt / mx) : 0}px"></div></div>`).join('')}</div>
+      <div class="sec"><h3>Open TCP ports <span>${r.ports.length}</span></h3>${r.ports.map(p => `<span class="chip"><b>${p.port}</b>${esc(p.service)}</span>`).join('') || '<span class="mut">none</span>'}</div>`;
+  } catch (e) { $('#dOut').innerHTML = `<div class="sec" style="color:${C.bad}">Probe failed: ${esc(e.message)}</div>`; }
+  finally { if ($('#dProbe')) { $('#dProbe').disabled = false; $('#dProbe').innerHTML = icon('radar') + 'Deep probe'; } }
 }
 
 function drawActivity() {
-  const agg = new Map();
-  for (const c of S.conns) { const k = c.proc + '|' + c.remote + '|' + c.rport; const a = agg.get(k) || {...c, n: 0}; a.n++; agg.set(k, a); }
-  $('#actBody').innerHTML = [...agg.values()].sort((a, b) => b.n - a.n).map(c => `<tr data-ip="${esc(c.remote)}">
-    <td>${esc(c.proc)} <span class="mut">${c.pid ?? ''}</span></td>
-    <td class="mono">${esc(c.rname || c.remote)}${c.rname ? `<div class="mut">${esc(c.remote)}</div>` : ''}</td>
-    <td class="mono">${c.rport}</td><td>${c.n}</td></tr>`).join('') || '<tr><td colspan="4" class="mut">none</td></tr>';
+  const cs = st.S.conns;
+  if (!cs.length) { $('#activity').innerHTML = '<div class="empty">No established TCP connections from this host.</div>'; return; }
+  const procs = d3.rollups(cs, v => v.length, c => c.proc).sort((a, b) => b[1] - a[1]), mx = procs[0][1];
+  const agg = d3.rollups(cs, v => ({...v[0], n: v.length}), c => c.proc + '|' + c.remote + '|' + c.rport).map(x => x[1]).sort((a, b) => b.n - a.n);
+  $('#activity').innerHTML = `<div class="det"><div class="sec"><h3>By process <span>${cs.length} sockets · ${new Set(cs.map(c => c.remote)).size} hosts</span></h3>
+    ${procs.slice(0, 8).map(([p, n]) => `<div class="proc"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p)}</span><div class="t" style="width:${100 * n / mx}%"></div><span class="mono mut">${n}</span></div>`).join('')}</div></div>
+    <table><thead><tr><th style="top:0">Process</th><th style="top:0">Remote</th><th style="top:0">Service</th><th style="top:0">#</th></tr></thead><tbody>
+    ${agg.map(c => `<tr data-ip="${esc(c.remote)}"><td><b style="font-weight:550">${esc(c.proc)}</b><div class="mut sm">pid ${c.pid ?? '?'}</div></td>
+      <td class="mono" style="word-break:break-all">${esc(c.rname || c.remote)}${c.rname ? `<div class="mut sm">${esc(c.remote)}</div>` : ''}</td>
+      <td class="mono">${c.rport}<div class="mut sm">${SVC[c.rport] || ''}</div></td><td class="mono">${c.n}</td></tr>`).join('')}</tbody></table>`;
 }
 
 function drawEvents() {
-  $('#evBody').innerHTML = S.events.slice().reverse().map(e => `<tr data-ip="${esc(e.ip || '')}" class="ev-${e.level}">
-    <td class="mut" style="white-space:nowrap">${new Date(e.t * 1000).toLocaleString()}</td><td>${esc(e.msg)}</td></tr>`).join('') || '<tr><td class="mut">no events yet</td></tr>';
+  const evs = st.S.events.slice().reverse().filter(e => st.evF === 'all' || e.level !== 'info');
+  $('#evBody').innerHTML = evs.map(e => `<div class="ev" data-ip="${esc(e.ip || '')}"><span class="lv lv-${e.level}"></span><div>${esc(e.msg)}</div>
+    <span class="when" title="${new Date(e.t * 1000).toLocaleString()}">${ago(e.t)}</span></div>`).join('') || '<div class="empty">No events yet.</div>';
 }
 
-function tab(t) { document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.id === t)); }
-function select(ip) { if (!S.devices.some(d => d.ip === ip)) return; sel = ip; tab('details'); render(); }
-const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)});
-
-function render() { if (!S) return; drawHeader(); drawGraph(); drawDevices(); drawDetails(); drawActivity(); drawEvents(); }
-async function refresh() {
-  try { S = await (await fetch('/api/state')).json(); render(); }
-  catch (e) { $('#err').style.display = 'block'; $('#err').textContent = 'lost connection to netmap server'; }
-}
-
-// ---------- wiring ----------
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => tab(b.dataset.t));
-for (const id of ['#devBody', '#evBody', '#actBody']) $(id).onclick = e => { const tr = e.target.closest('tr[data-ip]'); if (tr && tr.dataset.ip && !e.target.closest('a')) select(tr.dataset.ip); };
-$('#filter').oninput = drawDevices;
-$('#bScan').onclick = async () => { await post('/api/scan', {}); S.meta.scanning = true; drawHeader(); };
-$('#bConns').onclick = e => { showConns = !showConns; e.target.classList.toggle('on', showConns); render(); };
-$('#bOff').onclick = e => { showOff = !showOff; e.target.classList.toggle('on', showOff); render(); };
-$('#exp').onchange = e => {
-  const v = e.target.value; e.target.value = '';
-  const dl = (href, fn) => Object.assign(document.createElement('a'), {href, download: fn}).click();
-  const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, '');
-  if (v === 'CSV') dl('/api/export.csv', `netmap-${stamp}.csv`);
-  if (v === 'JSON') dl(URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], {type: 'application/json'})), `netmap-${stamp}.json`);
-  if (v === 'SVG') {
-    const c = $('#graph').cloneNode(true); c.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    const vb = c.getAttribute('viewBox').split(','), bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    Object.entries({x: vb[0], y: vb[1], width: vb[2], height: vb[3], fill: '#0d1117'}).forEach(([k, v]) => bg.setAttribute(k, v));
-    c.insertBefore(bg, c.firstChild);
-    dl(URL.createObjectURL(new Blob([c.outerHTML], {type: 'image/svg+xml'})), `netmap-${stamp}.svg`);
+function toasts() {
+  const evs = st.S.events, lastT = evs.length ? evs[evs.length - 1].t : 0;
+  if (st.lastEvT !== null) for (const e of evs.filter(e => e.t > st.lastEvT).slice(-3)) {
+    const el = Object.assign(document.createElement('div'), {className: 'toast ' + e.level, textContent: e.msg});
+    $('#toasts').append(el); setTimeout(() => el.remove(), 6000);
   }
-};
-addEventListener('keydown', e => {
-  if (e.target.matches('input,textarea')) return;
-  if (e.key === '/') { e.preventDefault(); tab('devices'); $('#filter').focus(); }
-  if (e.key === 'r') $('#bScan').click();
+  st.lastEvT = lastT;
+}
+
+// ---------------- state / render loop ----------------
+function tab(t) {
+  $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  $$('.tab').forEach(x => x.classList.toggle('on', x.id === t));
+  if (t === 'events' && st.S) { st.seenEv = st.S.events.length; drawHeader(); }
+}
+function select(ip) { if (!st.S.devices.some(d => d.ip === ip)) return; st.sel = ip; tab('details'); render(true); }
+function deselect() { st.sel = null; st.detailsFor = null; $('#details').innerHTML = '<div class="empty">Select a device on the map or in the list.</div>'; render(true); }
+async function post(u, b) { try { const r = await fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)}); return {ok: r.ok}; } catch { return {ok: false}; } }
+
+function render(force) {   // only touch the DOM for parts whose data changed
+  const S = st.S; if (!S) return;
+  if (force) st.last = {};
+  drawHeader();
+  const view = [st.layout, st.conns, st.off, st.sel];
+  if (changed('graph', [S.devices, S.path, st.conns ? S.conns.map(c => c.remote + c.proc) : 0, view]) ) drawGraph();
+  else if (changed('traffic', Math.round(Math.log2(1 + S.traffic.rx_bps + S.traffic.tx_bps)))) drawGraph();
+  if (changed('devs', [S.devices, $('#filter').value, st.sort, st.stF, st.sel])) drawDevices();
+  if (st.sel && changed('det', [S.devices.find(d => d.ip === st.sel), S.conns.filter(c => c.remote === st.sel)])) drawDetails();
+  if (changed('act', S.conns)) drawActivity();
+  if (changed('ev', [S.events.length, S.events[S.events.length - 1]?.t, st.evF, Math.floor(Date.now() / 30000)])) drawEvents();
+  toasts();
+}
+
+let timer, inflight = false;
+async function refresh() {
+  clearTimeout(timer);
+  if (!inflight && !(document.hidden && st.S)) {   // always load once; then pause while the tab is hidden
+    inflight = true;
+    try {
+      st.S = await (await fetch('/api/state')).json();
+      if (st.seenEv === 0) st.seenEv = st.S.events.length;
+      render();
+    } catch { $('#err').style.display = 'block'; $('#err').textContent = 'Lost connection to the netmap server — retrying…'; }
+    inflight = false;
+  }
+  timer = setTimeout(refresh, st.S?.meta.scanning ? 1000 : 2000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });   // polling pauses while hidden
+setInterval(scanStatus, 1000);
+
+// ---------------- wiring ----------------
+$$('nav button').forEach(b => b.onclick = () => tab(b.dataset.t));
+$$('.card[data-go]').forEach(c => c.onclick = () => tab(c.dataset.go));
+const rowSelect = e => { const r = e.target.closest('[data-ip]'); if (r && r.dataset.ip && !e.target.closest('a,button')) select(r.dataset.ip); };
+['#devBody', '#evBody', '#activity'].forEach(s => $(s).addEventListener('click', rowSelect));
+$('#details').addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied ' + b.dataset.copy); } catch { toast('Clipboard unavailable'); }
 });
-$('#legend').innerHTML = Object.entries(TYPES).map(([k, [c]]) => `<span><span class="dot" style="background:${c}"></span>${k}</span>`).join('')
-  + '<br><span class="mut">edge colour = latency (green &lt;10ms, amber &lt;100, red) · dashed = stale ARP · green ring = new (&lt;10min) · drag to pin, dbl-click to unpin</span>';
-refresh(); setInterval(refresh, 2000);
+const toast = msg => { const el = Object.assign(document.createElement('div'), {className: 'toast', textContent: msg}); $('#toasts').append(el); setTimeout(() => el.remove(), 2500); };
+$('#filter').oninput = () => render();
+$$('#devices th').forEach(th => th.onclick = () => { const k = th.dataset.k; st.sort = {k, dir: st.sort.k === k ? -st.sort.dir : 1}; render(); });
+const seg = (sel, fn) => $$(sel + ' button').forEach(b => b.onclick = () => { $$(sel + ' button').forEach(x => x.classList.toggle('on', x === b)); fn(b.dataset.v); render(); });
+seg('#stFilter', v => st.stF = v);
+seg('#evFilter', v => st.evF = v);
+seg('#layout', v => { st.layout = v; nodeMap.forEach(n => n.pinned = false); didFit = false; });
+$('#bConns').onclick = e => { st.conns = !st.conns; e.currentTarget.classList.toggle('on', st.conns); didFit = false; render(); };
+$('#bOff').onclick = e => { st.off = !st.off; e.currentTarget.classList.toggle('on', st.off); render(); };
+$('#bLeg').onclick = e => e.currentTarget.classList.toggle('on', $('#legend').classList.toggle('show'));
+$('#zIn').onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 1.3);
+$('#zOut').onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 1 / 1.3);
+$('#zFit').onclick = () => fit();
+$('#bScan').onclick = async () => { await post('/api/scan', {}); if (st.S) { st.S.meta.scanning = true; scanStatus(); } setTimeout(refresh, 300); };
+$('#bExp').onclick = e => { e.stopPropagation(); $('#expMenu').classList.toggle('open'); };
+document.addEventListener('click', () => $('#expMenu').classList.remove('open'));
+$$('#expMenu .pop button').forEach(b => b.onclick = () => exportAs(b.dataset.x));
+
+function exportAs(kind) {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, ''), fn = `netmap-${stamp}.${kind}`;
+  const dl = href => Object.assign(document.createElement('a'), {href, download: fn}).click();
+  if (kind === 'csv') return dl('/api/export.csv');
+  if (kind === 'json') return dl(URL.createObjectURL(new Blob([JSON.stringify(st.S, null, 2)], {type: 'application/json'})));
+  const c = $('#graph').cloneNode(true), vb = c.getAttribute('viewBox').split(',').map(Number);
+  c.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); c.setAttribute('width', vb[2]); c.setAttribute('height', vb[3]);
+  c.insertAdjacentHTML('afterbegin', `<defs>${$('#icons').innerHTML}</defs><rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" fill="${C.bg}"/>`);
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(c)], {type: 'image/svg+xml'}));
+  if (kind === 'svg') return dl(url);
+  const img = new Image();
+  img.onload = () => { const cv = Object.assign(document.createElement('canvas'), {width: vb[2] * 2, height: vb[3] * 2}), x = cv.getContext('2d');
+    x.scale(2, 2); x.drawImage(img, 0, 0); cv.toBlob(b => dl(URL.createObjectURL(b))); };
+  img.src = url;
+}
+
+addEventListener('keydown', e => {
+  if (e.target.matches('input,textarea') || e.metaKey || e.ctrlKey) return;
+  if (e.key === '/') { e.preventDefault(); tab('devices'); $('#filter').focus(); }
+  else if (e.key === 'r') $('#bScan').click();
+  else if (e.key === 'f') fit();
+  else if (e.key === 'Escape') deselect();
+  else if ('1234'.includes(e.key)) tab(['devices', 'details', 'activity', 'events'][+e.key - 1]);
+});
+
+$('#legend').innerHTML = `<div style="margin-bottom:6px">${Object.entries(TYPES).filter(([k]) => k !== 'hop').map(([k, [c, l]]) =>
+    `<span class="sw" style="color:${c}">${icon(k)}<span style="color:var(--fg)">${l}</span></span>`).join('')}</div>
+  <div class="mut"><span class="sw"><span class="ln" style="border-color:${C.ok}"></span>&lt;10 ms</span><span class="sw"><span class="ln" style="border-color:${C.warn}"></span>&lt;100 ms</span>
+  <span class="sw"><span class="ln" style="border-color:${C.bad}"></span>slow</span><span class="sw"><span class="ln" style="border-color:${C.mut};border-top-style:dashed"></span>stale ARP</span>
+  <span class="sw"><span class="ln" style="border-color:#7c9cff;border-top-width:4px"></span>WAN (width = traffic)</span></div>
+  <div class="mut" style="margin-top:4px">Keys: <b>/</b> search · <b>r</b> rescan · <b>f</b> fit · <b>1–4</b> tabs · <b>Esc</b> deselect · drag to pin (force layout), double-click to release</div>`;
+refresh();
 </script>
 </body>
 </html>

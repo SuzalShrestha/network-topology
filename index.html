@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>netmap</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--mut:#8b949e;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--acc:#58a6ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;height:100vh;display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:15px;margin:0}
+.chip{color:var(--mut);white-space:nowrap}.chip b{color:var(--fg);font-weight:600}
+.sp{flex:1}
+button,select,input,textarea{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 9px;font:inherit}
+button{cursor:pointer}button:hover{border-color:var(--acc)}button.on{border-color:var(--acc);color:var(--acc)}
+#err{display:none;background:#3d1d1d;color:#ffb3ad;padding:6px 14px;border-bottom:1px solid var(--bad)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 440px;min-height:0;flex:1}
+#graph{width:100%;height:100%;display:block;cursor:grab;min-height:0}
+aside{min-width:0;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+nav{display:flex;border-bottom:1px solid var(--line)}
+nav button{flex:1;border:0;border-radius:0;border-bottom:2px solid transparent;background:none;padding:9px}
+nav button.on{border-bottom-color:var(--acc)}
+.tab{display:none;overflow:auto;padding:10px;flex:1}.tab.on{display:block}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:500;position:sticky;top:-10px;background:var(--panel)}
+tbody tr{cursor:pointer}tbody tr:hover,tr.sel{background:#1f2630}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.online{background:var(--ok)}.stale{background:var(--warn)}.offline{background:var(--mut)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.mut{color:var(--mut)}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 7px;margin:2px;font-size:12px}
+a{color:var(--acc)}
+dl{display:grid;grid-template-columns:110px 1fr;gap:3px 8px;margin:8px 0}dt{color:var(--mut)}dd{margin:0;word-break:break-all}
+pre{background:var(--bg);padding:8px;border-radius:6px;overflow:auto;white-space:pre-wrap}
+.ev-warn{color:var(--warn)}.ev-error{color:var(--bad)}
+#legend{position:absolute;left:10px;bottom:10px;background:#161b22cc;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px}
+#legend span{margin-right:8px;white-space:nowrap}
+.wan{animation:flow linear infinite}
+@keyframes flow{to{stroke-dashoffset:-24}}
+@media (max-width:900px){body{height:auto}main{grid-template-columns:minmax(0,1fr);grid-template-rows:60vh auto}#legend{display:none}aside{border-left:0;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>netmap</h1>
+  <span class="chip" id="net"></span>
+  <span class="chip" id="counts"></span>
+  <span class="chip" id="rates"></span>
+  <svg id="spark" width="140" height="26"></svg>
+  <span class="chip" id="scan"></span>
+  <span class="sp"></span>
+  <button id="bConns" title="Show remote endpoints of this host's live TCP connections">Connections</button>
+  <button id="bOff" class="on">Offline</button>
+  <button id="bScan" title="r">Rescan</button>
+  <select id="exp"><option value="">Export…</option><option>JSON</option><option>CSV</option><option>SVG</option></select>
+</header>
+<div id="err"></div>
+<main>
+  <div style="position:relative;min-height:0">
+    <svg id="graph"></svg>
+    <div id="legend"></div>
+  </div>
+  <aside>
+    <nav><button data-t="devices" class="on">Devices</button><button data-t="details">Details</button><button data-t="activity">Activity</button><button data-t="events">Events</button></nav>
+    <div class="tab on" id="devices">
+      <input id="filter" placeholder="Filter (ip, name, vendor, type, port)…  /" style="width:100%;margin-bottom:8px">
+      <table><thead><tr><th>IP</th><th>Name / vendor</th><th>Type</th><th>RTT</th><th>Ports</th></tr></thead><tbody id="devBody"></tbody></table>
+    </div>
+    <div class="tab" id="details"><p class="mut">Click a node or row.</p></div>
+    <div class="tab" id="activity">
+      <p class="mut">Live established TCP connections from this host (refreshed every 2s).</p>
+      <table><thead><tr><th>Process</th><th>Remote</th><th>Port</th><th>#</th></tr></thead><tbody id="actBody"></tbody></table>
+    </div>
+    <div class="tab" id="events"><table><tbody id="evBody"></tbody></table></div>
+  </aside>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TYPES = {internet:['#8b949e','WAN'],hop:['#6e7681','hop'],router:['#f0883e','RT'],'this-host':['#58a6ff','ME'],
+  network:['#d29922','NW'],computer:['#a371f7','PC'],server:['#3fb950','SV'],phone:['#db61a2','PH'],printer:['#79c0ff','PR'],
+  media:['#ff7b72','TV'],camera:['#e3b341','CAM'],iot:['#56d4dd','IOT'],remote:['#484f58','EXT'],unknown:['#6e7681','?']};
+const WEB = new Set([80,81,443,3000,5000,8000,8080,8443,8888,9000]);
+let S = null, sel = null, showConns = false, showOff = true, detailsFor = null;
+
+const fmtRate = b => b < 1024 ? b.toFixed(0)+' B/s' : b < 1048576 ? (b/1024).toFixed(1)+' KB/s' : (b/1048576).toFixed(2)+' MB/s';
+const ago = t => { if (!t) return '-'; const s = Date.now()/1000 - t; return s < 60 ? Math.round(s)+'s ago' : s < 3600 ? Math.round(s/60)+'m ago' : s < 86400 ? Math.round(s/3600)+'h ago' : new Date(t*1000).toLocaleDateString(); };
+const name = d => d.label || d.hostname || d.vendor || '';
+const rttColor = r => r == null ? '#484f58' : r < 10 ? '#3fb950' : r < 100 ? '#d29922' : '#f85149';
+
+// ---------- graph ----------
+const svg = d3.select('#graph'), root = svg.append('g');
+const linkG = root.append('g'), nodeG = root.append('g');
+svg.call(d3.zoom().scaleExtent([0.2, 4]).on('zoom', e => root.attr('transform', e.transform)));
+const sim = d3.forceSimulation()
+  .force('link', d3.forceLink().id(d => d.id).distance(l => l.dist).strength(0.7))
+  .force('charge', d3.forceManyBody().strength(-260))
+  .force('x', d3.forceX().strength(0.04)).force('y', d3.forceY().strength(0.04))
+  .force('collide', d3.forceCollide(30))
+  .on('tick', () => {
+    linkG.selectAll('line').attr('x1', l => l.source.x).attr('y1', l => l.source.y).attr('x2', l => l.target.x).attr('y2', l => l.target.y);
+    nodeG.selectAll('g.n').attr('transform', n => `translate(${n.x},${n.y})`);
+  });
+const resize = () => { const r = $('#graph').getBoundingClientRect(); svg.attr('viewBox', [-r.width/2, -r.height/2, r.width, r.height]); };
+addEventListener('resize', resize); resize();
+const nodeMap = new Map(); let lastSig = '';
+
+function buildGraph() {
+  const N = [], L = [], m = S.meta;
+  const add = (id, o) => { let n = nodeMap.get(id); if (!n) nodeMap.set(id, n = {id}); Object.assign(n, o); N.push(n); return n; };
+  const devs = S.devices.filter(d => showOff || d.status !== 'offline');
+  const gw = devs.find(d => d.is_gateway), me = devs.find(d => d.is_self);
+  const hub = gw ? gw.ip : me ? me.ip : null;
+  const hops = (S.path || []).filter(h => h.ip && h.ip !== m.gateway).reverse();
+  add('internet', {type: 'internet', label: 'Internet', r: 22, fx: 0, fy: -70 - 42 * hops.length});
+  let prev = 'internet';
+  hops.forEach((h, i) => { add('hop:'+h.ip, {type: 'hop', label: h.ip, sub: h.rtt != null ? h.rtt+' ms' : '', r: 7, hop: h, fx: 0, fy: -42 * (hops.length - i) - 10});
+    L.push({source: prev, target: 'hop:'+h.ip, dist: 45, kind: 'path'}); prev = 'hop:'+h.ip; });
+  for (const d of devs) add(d.ip, {type: d.type || 'unknown', label: name(d) || d.ip, sub: d.ip, r: d.is_gateway ? 18 : d.is_self ? 15 : 12, dev: d});
+  if (hub) { L.push({source: prev, target: hub, dist: 60, kind: 'wan'}); nodeMap.get(hub).fx = 0; nodeMap.get(hub).fy = 0; }
+  for (const d of devs) if (d.ip !== hub) L.push({source: hub || 'internet', target: d.ip, dist: 110, kind: 'lan', dev: d});
+  if (showConns && me) {
+    const agg = new Map();
+    for (const c of S.conns) { const a = agg.get(c.remote) || {n: 0, procs: new Set(), ports: new Set(), rname: c.rname}; a.n++; a.procs.add(c.proc); a.ports.add(c.rport); agg.set(c.remote, a); }
+    for (const [ip, a] of agg) {
+      if (nodeMap.has(ip) && devs.some(d => d.ip === ip)) { L.push({source: me.ip, target: ip, dist: 90, kind: 'conn', n: a.n}); continue; }
+      add('r:'+ip, {type: 'remote', label: a.rname || ip, sub: [...a.procs].join(', '), r: 7, conn: {ip, ...a}});
+      L.push({source: me.ip, target: 'r:'+ip, dist: 150, kind: 'conn', n: a.n});
+    }
+  }
+  for (const id of [...nodeMap.keys()]) if (!N.some(n => n.id === id)) nodeMap.delete(id);
+  return {N, L};
+}
+
+function drawGraph() {
+  const {N, L} = buildGraph(), t = S.traffic;
+  const sig = N.map(n => n.id).join() + '|' + L.map(l => l.kind + (l.source.id || l.source) + (l.target.id || l.target)).join();
+  sim.nodes(N); sim.force('link').links(L);
+  if (sig !== lastSig) { sim.alpha(lastSig ? 0.4 : 1).restart(); lastSig = sig; }
+  const wanW = 1.5 + Math.min(8, Math.log10(1 + (t.rx_bps + t.tx_bps) / 1024) * 2.5);
+  const wanDur = (t.rx_bps + t.tx_bps) > 1024 ? Math.max(0.3, 3 - Math.log10((t.rx_bps + t.tx_bps) / 1024)) : 0;
+  linkG.selectAll('line').data(L, l => l.kind + (l.source.id || l.source) + (l.target.id || l.target)).join('line')
+    .attr('class', l => l.kind === 'wan' && wanDur ? 'wan' : null)
+    .style('animation-duration', l => l.kind === 'wan' && wanDur ? wanDur + 's' : null)
+    .attr('stroke', l => l.kind === 'lan' ? rttColor(l.dev.rtt) : l.kind === 'conn' ? '#58a6ff' : '#8b949e')
+    .attr('stroke-opacity', l => l.kind === 'lan' && l.dev.status !== 'online' ? 0.25 : l.kind === 'conn' ? 0.45 : 0.8)
+    .attr('stroke-width', l => l.kind === 'wan' ? wanW : l.kind === 'conn' ? Math.min(4, 0.8 + l.n * 0.4) : 1.5)
+    .attr('stroke-dasharray', l => l.kind === 'wan' ? '8 4' : l.kind === 'lan' && l.dev.status === 'stale' ? '3 3' : l.kind === 'path' ? '2 3' : null);
+  const g = nodeG.selectAll('g.n').data(N, n => n.id).join(enter => {
+    const e = enter.append('g').attr('class', 'n').style('cursor', 'pointer')
+      .call(d3.drag().on('start', (ev, n) => { if (!ev.active) sim.alphaTarget(0.2).restart(); n.fx = n.x; n.fy = n.y; })
+        .on('drag', (ev, n) => { n.fx = ev.x; n.fy = ev.y; })
+        .on('end', (ev, n) => { if (!ev.active) sim.alphaTarget(0); }))   // stays pinned where dropped
+      .on('click', (ev, n) => { if (n.dev) select(n.dev.ip); })
+      .on('dblclick', (ev, n) => { ev.stopPropagation(); if (n.id !== 'internet') n.fx = n.fy = null; sim.alpha(0.3).restart(); });
+    e.append('circle').attr('class', 'ring').attr('fill', 'none').attr('stroke-width', 2);
+    e.append('circle').attr('class', 'body').attr('stroke', '#0d1117').attr('stroke-width', 2);
+    e.append('text').attr('class', 'glyph').attr('text-anchor', 'middle').attr('dy', '0.35em').attr('fill', '#0d1117').attr('font-weight', 700).attr('pointer-events', 'none');
+    e.append('text').attr('class', 'lbl').attr('text-anchor', 'middle').attr('fill', '#e6edf3').attr('font-size', 11).attr('pointer-events', 'none');
+    e.append('text').attr('class', 'sub').attr('text-anchor', 'middle').attr('fill', '#8b949e').attr('font-size', 10).attr('pointer-events', 'none');
+    e.append('title');
+    return e;
+  });
+  const fresh = d => d && Date.now()/1000 - d.first_seen < 600;
+  g.attr('opacity', n => n.dev && n.dev.status === 'offline' ? 0.35 : 1);
+  g.select('circle.body').attr('r', n => n.r).attr('fill', n => TYPES[n.type]?.[0] || '#6e7681');
+  g.select('circle.ring').attr('r', n => n.r + 5)
+    .attr('stroke', n => n.dev && n.dev.ip === sel ? '#e6edf3' : fresh(n.dev) ? '#3fb950' : n.dev?.status === 'stale' ? '#d29922' : 'none')
+    .attr('stroke-dasharray', n => n.dev?.status === 'stale' ? '3 3' : null);
+  g.select('text.glyph').text(n => n.r >= 11 ? TYPES[n.type]?.[1] : '').attr('font-size', n => n.r > 14 ? 10 : 8);
+  g.selectAll('text.lbl,text.sub').attr('text-anchor', n => n.hop ? 'start' : 'middle').attr('x', n => n.hop ? 14 : 0);
+  g.select('text.lbl').attr('y', n => n.hop ? -1 : n.r + 14).text(n => n.label.length > 24 ? n.label.slice(0, 23) + '…' : n.label);
+  g.select('text.sub').attr('y', n => n.hop ? 11 : n.r + 26).text(n => n.sub && n.sub !== n.label ? n.sub.slice(0, 30) : '');
+  g.select('title').text(n => n.dev ? `${n.dev.ip}\n${n.dev.mac || ''}\n${n.dev.vendor || ''}\nRTT ${n.dev.rtt ?? '-'} ms\nports ${(n.dev.ports || []).join(', ')}`
+    : n.conn ? `${n.conn.ip}\n${[...n.conn.procs].join(', ')}\nports ${[...n.conn.ports].join(', ')}\n${n.conn.n} conn(s)` : n.label);
+}
+
+// ---------- panels ----------
+function drawHeader() {
+  const m = S.meta, t = S.traffic, c = {online: 0, stale: 0, offline: 0};
+  S.devices.forEach(d => c[d.status]++);
+  $('#net').innerHTML = m.cidr ? `<b>${esc(m.cidr)}</b> on ${esc(m.iface)} · gw ${esc(m.gateway)}` : 'starting…';
+  $('#counts').innerHTML = `<b style="color:var(--ok)">${c.online}</b> online · ${c.stale} stale · ${c.offline} offline`;
+  $('#rates').innerHTML = `↓ <b>${fmtRate(t.rx_bps)}</b> ↑ <b>${fmtRate(t.tx_bps)}</b>`;
+  $('#scan').textContent = m.scanning ? 'scanning…' : 'scanned ' + ago(m.last_scan);
+  $('#err').style.display = m.error ? 'block' : 'none'; $('#err').textContent = m.error || '';
+  const h = t.history, sp = d3.select('#spark');
+  if (h.length > 1) {
+    const x = d3.scaleLinear([h[0][0], h[h.length-1][0]], [0, 140]), y = d3.scaleLinear([0, d3.max(h, p => Math.max(p[1], p[2])) || 1], [25, 1]);
+    sp.selectAll('path').data([[1, '#3fb950'], [2, '#58a6ff']]).join('path').attr('fill', 'none').attr('stroke', d => d[1]).attr('stroke-width', 1.2)
+      .attr('d', ([i]) => d3.line(p => x(p[0]), p => y(p[i]))(h));
+  }
+}
+
+function drawDevices() {
+  const q = $('#filter').value.toLowerCase().trim();
+  const rows = S.devices.filter(d => !q || [d.ip, d.mac, d.hostname, d.label, d.vendor, d.type, d.notes, ...(d.ports || [])].join(' ').toLowerCase().includes(q));
+  $('#devBody').innerHTML = rows.map(d => `<tr data-ip="${esc(d.ip)}" class="${d.ip === sel ? 'sel' : ''}">
+    <td class="mono"><span class="dot ${d.status}"></span>${esc(d.ip)}</td>
+    <td>${esc(d.label || d.hostname || '')}<div class="mut">${esc(d.vendor || d.mac || '')}</div></td>
+    <td>${esc(d.type)}</td><td class="mono" style="color:${rttColor(d.rtt)}">${d.rtt != null ? d.rtt.toFixed(1) : '-'}</td>
+    <td class="mono">${(d.ports || []).join(' ')}</td></tr>`).join('');
+}
+
+function drawDetails() {
+  const d = S.devices.find(x => x.ip === sel);
+  if (!d) return;
+  const linkFor = p => WEB.has(p) ? `<a class="pill mono" target="_blank" rel="noopener" href="${[443, 8443].includes(p) ? 'https' : 'http'}://${esc(d.ip)}:${p}">${p}</a>` : `<span class="pill mono">${p}</span>`;
+  const conns = S.conns.filter(c => c.remote === d.ip);
+  const info = `<h3 style="margin:0">${esc(name(d) || d.ip)}</h3>
+    <dl><dt>Status</dt><dd><span class="dot ${d.status}"></span>${d.status} <span class="mut">via ${(d.seen_by || []).join(', ') || '-'}</span></dd>
+    <dt>IP</dt><dd class="mono">${esc(d.ip)}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || '-')}</dd>
+    <dt>Vendor</dt><dd>${esc(d.vendor || '-')}</dd><dt>Hostname</dt><dd>${esc(d.hostname || '-')}</dd>
+    <dt>Type</dt><dd>${esc(d.type)}</dd><dt>RTT</dt><dd style="color:${rttColor(d.rtt)}">${d.rtt ?? '-'} ms</dd>
+    <dt>First seen</dt><dd>${new Date(d.first_seen * 1000).toLocaleString()}</dd><dt>Last seen</dt><dd>${ago(d.last_seen)}</dd>
+    <dt>Open ports</dt><dd>${(d.ports || []).map(linkFor).join('') || '-'}</dd>
+    ${(d.ports || []).includes(22) ? `<dt>SSH</dt><dd class="mono">ssh ${esc(d.ip)}</dd>` : ''}
+    <dt>Live conns</dt><dd>${conns.length ? conns.map(c => `${esc(c.proc)} → :${c.rport}`).join('<br>') : '-'}</dd></dl>`;
+  if (detailsFor !== d.ip) {   // rebuild form only on selection change so typing isn't clobbered by refreshes
+    detailsFor = d.ip;
+    $('#details').innerHTML = `<div id="dInfo"></div>
+      <label class="mut">Label</label><input id="dLabel" style="width:100%" maxlength="100">
+      <label class="mut">Notes</label><textarea id="dNotes" rows="3" style="width:100%" maxlength="2000"></textarea>
+      <div style="display:flex;gap:6px;margin:6px 0"><button id="dSave">Save</button><button id="dProbe" title="ping ×5, traceroute, TCP 1-1024 + common ports">Deep probe</button></div>
+      <div id="dOut"></div>`;
+    $('#dLabel').value = d.label || ''; $('#dNotes').value = d.notes || '';
+    $('#dSave').onclick = async () => { await post('/api/device', {ip: d.ip, label: $('#dLabel').value, notes: $('#dNotes').value}); refresh(); };
+    $('#dProbe').onclick = async () => {
+      $('#dOut').innerHTML = '<p class="mut">probing… (~10–30s)</p>';
+      const r = await (await fetch('/api/probe?ip=' + encodeURIComponent(d.ip))).json();
+      $('#dOut').innerHTML = r.error ? `<pre>${esc(r.error)}</pre>` : `<pre>${esc(r.ping)}</pre>
+        <b>Traceroute</b><pre>${r.traceroute.map(h => `${h.hop}\t${h.ip || '*'}\t${h.rtt ?? ''} ms`).join('\n')}</pre>
+        <b>Open ports</b><pre>${r.ports.map(p => `${p.port}/tcp\t${p.service}`).join('\n') || 'none'}</pre>`;
+    };
+  }
+  $('#dInfo').innerHTML = info;
+}
+
+function drawActivity() {
+  const agg = new Map();
+  for (const c of S.conns) { const k = c.proc + '|' + c.remote + '|' + c.rport; const a = agg.get(k) || {...c, n: 0}; a.n++; agg.set(k, a); }
+  $('#actBody').innerHTML = [...agg.values()].sort((a, b) => b.n - a.n).map(c => `<tr data-ip="${esc(c.remote)}">
+    <td>${esc(c.proc)} <span class="mut">${c.pid ?? ''}</span></td>
+    <td class="mono">${esc(c.rname || c.remote)}${c.rname ? `<div class="mut">${esc(c.remote)}</div>` : ''}</td>
+    <td class="mono">${c.rport}</td><td>${c.n}</td></tr>`).join('') || '<tr><td colspan="4" class="mut">none</td></tr>';
+}
+
+function drawEvents() {
+  $('#evBody').innerHTML = S.events.slice().reverse().map(e => `<tr data-ip="${esc(e.ip || '')}" class="ev-${e.level}">
+    <td class="mut" style="white-space:nowrap">${new Date(e.t * 1000).toLocaleString()}</td><td>${esc(e.msg)}</td></tr>`).join('') || '<tr><td class="mut">no events yet</td></tr>';
+}
+
+function tab(t) { document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.id === t)); }
+function select(ip) { if (!S.devices.some(d => d.ip === ip)) return; sel = ip; tab('details'); render(); }
+const post = (u, b) => fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)});
+
+function render() { if (!S) return; drawHeader(); drawGraph(); drawDevices(); drawDetails(); drawActivity(); drawEvents(); }
+async function refresh() {
+  try { S = await (await fetch('/api/state')).json(); render(); }
+  catch (e) { $('#err').style.display = 'block'; $('#err').textContent = 'lost connection to netmap server'; }
+}
+
+// ---------- wiring ----------
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => tab(b.dataset.t));
+for (const id of ['#devBody', '#evBody', '#actBody']) $(id).onclick = e => { const tr = e.target.closest('tr[data-ip]'); if (tr && tr.dataset.ip && !e.target.closest('a')) select(tr.dataset.ip); };
+$('#filter').oninput = drawDevices;
+$('#bScan').onclick = async () => { await post('/api/scan', {}); S.meta.scanning = true; drawHeader(); };
+$('#bConns').onclick = e => { showConns = !showConns; e.target.classList.toggle('on', showConns); render(); };
+$('#bOff').onclick = e => { showOff = !showOff; e.target.classList.toggle('on', showOff); render(); };
+$('#exp').onchange = e => {
+  const v = e.target.value; e.target.value = '';
+  const dl = (href, fn) => Object.assign(document.createElement('a'), {href, download: fn}).click();
+  const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, '');
+  if (v === 'CSV') dl('/api/export.csv', `netmap-${stamp}.csv`);
+  if (v === 'JSON') dl(URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], {type: 'application/json'})), `netmap-${stamp}.json`);
+  if (v === 'SVG') {
+    const c = $('#graph').cloneNode(true); c.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const vb = c.getAttribute('viewBox').split(','), bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    Object.entries({x: vb[0], y: vb[1], width: vb[2], height: vb[3], fill: '#0d1117'}).forEach(([k, v]) => bg.setAttribute(k, v));
+    c.insertBefore(bg, c.firstChild);
+    dl(URL.createObjectURL(new Blob([c.outerHTML], {type: 'image/svg+xml'})), `netmap-${stamp}.svg`);
+  }
+};
+addEventListener('keydown', e => {
+  if (e.target.matches('input,textarea')) return;
+  if (e.key === '/') { e.preventDefault(); tab('devices'); $('#filter').focus(); }
+  if (e.key === 'r') $('#bScan').click();
+});
+$('#legend').innerHTML = Object.entries(TYPES).map(([k, [c]]) => `<span><span class="dot" style="background:${c}"></span>${k}</span>`).join('')
+  + '<br><span class="mut">edge colour = latency (green &lt;10ms, amber &lt;100, red) · dashed = stale ARP · green ring = new (&lt;10min) · drag to pin, dbl-click to unpin</span>';
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>

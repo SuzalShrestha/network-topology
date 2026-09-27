@@ -18,16 +18,16 @@ Options (`serve` / `scan`): `--iface en0`, `--cidr 10.0.0.0/22` (max 4096 addrs)
 
 | | |
 |---|---|
-| **Discovery** | ICMP sweep + ARP/neighbour table + TCP probe. Status is `online`, `stale` (only in the ARP cache) or `offline`. |
+| **Discovery** | ICMP sweep from one unprivileged socket (a /24 takes ~2.5s end to end), ARP/neighbour table and a TCP probe. Status is `online`, `stale` (only in the ARP cache) or `offline`. |
 | **Fingerprint** | MAC, vendor (OUI), randomized-MAC detection, reverse DNS, 36 common TCP ports, device-type guess (router/printer/phone/camera/IoT/…). |
-| **Topology** | Internet → traceroute hops (ISP path) → gateway → devices. Edge colour = latency, WAN edge width/animation = live throughput. Drag to pin, double-click to unpin, zoom/pan. |
+| **Topology** | Internet → traceroute hops (ISP path) → gateway → devices, in a radial or force layout. Device-type icons. Edge colour = latency, WAN edge width/animation = live throughput. Hover highlights neighbours, fit-to-view, drag to pin. |
 | **Activity** | Live established TCP connections of this host (process → remote host:port, rDNS), optionally drawn on the graph. Interface ↓/↑ rate + sparkline. |
 | **Alerts** | New device, went offline/back online, MAC changed for an IP, one MAC answering for several IPs (flags possible ARP spoofing when it's the gateway's MAC). |
-| **Deep probe** | Per device: ping ×5 stats, traceroute, TCP 1–1024 scan. Restricted to the scanned subnet. |
+| **Per device** | Latency history with avg/jitter/loss over the last 60 scans. Deep probe (ping ×5, traceroute, TCP 1–1024 scan; restricted to the scanned subnet). Copy IP/MAC/ssh, open web UI. |
 | **Inventory** | Labels and notes per device, first/last seen, persisted per network (subnet + gateway MAC) in `~/.netmap/` (`NETMAP_HOME` overrides). |
-| **Integrations** | `GET /api/state` (JSON), `/api/export.csv`, `/metrics` (Prometheus), `POST /api/scan`. UI exports JSON/CSV/SVG. |
+| **Integrations** | `GET /api/state` (JSON), `/api/export.csv`, `/metrics` (Prometheus), `POST /api/scan`. UI exports PNG/SVG/CSV/JSON. |
 
-Keys: `/` filter, `r` rescan.
+Keys: `/` search, `r` rescan, `f` fit, `1`–`4` tabs, `Esc` deselect.
 
 ## Notes
 
